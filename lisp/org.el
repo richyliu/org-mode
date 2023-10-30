@@ -10184,7 +10184,7 @@ TYPE is either `deadline' or `scheduled'.  See `org-deadline' or
   (org-fold-core-ignore-modifications
     (let* ((deadline? (eq type 'deadline))
 	   (keyword (if deadline? org-deadline-string org-scheduled-string))
-	   (log (if deadline? org-log-redeadline org-log-reschedule))
+	   (log (if (equal arg '(64)) 'note (if deadline? org-log-redeadline org-log-reschedule)))
 	   (old-date (org-entry-get nil (if deadline? "DEADLINE" "SCHEDULED")))
 	   (old-date-time (and old-date (org-time-string-to-time old-date)))
 	   ;; Save repeater cookie from either TIME or current scheduled
@@ -10230,7 +10230,7 @@ TYPE is either `deadline' or `scheduled'.  See `org-deadline' or
 	         (replace-match
 		  (concat keyword
 			  " <" rpl
-			  (format " -%dd"
+			  (format " --%dd"
 				  (abs (- (time-to-days
 					   (save-match-data
 					     (org-read-date
@@ -10270,6 +10270,7 @@ the user select a date.
 
 With one universal prefix argument, remove any deadline from the item.
 With two universal prefix arguments, prompt for a warning delay.
+With three universal prefix arguments, prompt for a note
 With argument TIME, set the deadline at the corresponding date.  TIME
 can either be an Org date like \"2011-07-24\" or a delta like \"+2d\"."
   (interactive "P")
@@ -10291,6 +10292,7 @@ the user select a date.
 
 With one universal prefix argument, remove any scheduling date from the item.
 With two universal prefix arguments, prompt for a delay cookie.
+With three universal prefix arguments, prompt for a note
 With argument TIME, scheduled at the corresponding date.  TIME can
 either be an Org date like \"2011-07-24\" or a delta like \"+2d\"."
   (interactive "P")
