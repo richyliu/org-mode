@@ -1,6 +1,6 @@
 ;;; org-ctags.el --- Integrate Emacs "tags" Facility with Org -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2007-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2024 Free Software Foundation, Inc.
 
 ;; Author: Paul Sexton <eeeickythump@gmail.com>
 ;; Keywords: org, wp
@@ -149,7 +149,7 @@
 (defvar org-ctags-enabled-p t
   "Activate ctags support in org mode?")
 
-(defvar org-ctags-tag-regexp "/<<([^>]+)>>/\\1/d,definition/"
+(defvar org-ctags-tag-regexp "/<<([^<>]+)>>/\\1/d,definition/"
   "Regexp expression used by ctags external program.
 The regexp matches tag destinations in Org files.
 Format is: /REGEXP/TAGNAME/FLAGS,TAGTYPE/
@@ -484,11 +484,11 @@ its subdirectories contain large numbers of taggable files."
       (setq exitcode
             (shell-command
              (format (concat "%s --langdef=orgmode --langmap=orgmode:.org "
-                             "--regex-orgmode=\"%s\" -f \"%s\" -e -R \"%s\"")
+                             "--regex-orgmode=\"%s\" -f \"%s\" -e -R %s")
                      org-ctags-path-to-ctags
                      org-ctags-tag-regexp
                      (expand-file-name (concat dir-name "/TAGS"))
-                     (expand-file-name (concat dir-name "/*")))))
+                     (expand-file-name (concat (shell-quote-argument dir-name) "/*")))))
       (cond
        ((eql 0 exitcode)
         (setq-local org-ctags-tag-list
@@ -506,12 +506,11 @@ its subdirectories contain large numbers of taggable files."
 
 (defun org-ctags-find-tag-interactive ()
   "Prompt for the name of a tag, with autocompletion, then visit the named tag.
-Uses `ido-mode' if available.
 If the user enters a string that does not match an existing tag, create
 a new topic."
   (interactive)
-  (let* ((tag (ido-completing-read "Topic: " org-ctags-tag-list
-                       nil 'confirm nil 'org-ctags-find-tag-history)))
+  (let* ((tag (completing-read "Topic: " org-ctags-tag-list
+                               nil 'confirm nil 'org-ctags-find-tag-history)))
     (when tag
       (cond
        ((member tag org-ctags-tag-list)

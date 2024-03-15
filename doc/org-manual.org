@@ -22,6 +22,9 @@ Org Mode is an authoring tool and a TODO lists manager for GNU Emacs.
 It relies on a lightweight plain-text markup language used in files
 with the =.org= extension.
 
+Authoring Org files is best supported by Emacs, but you can view,
+understand, and change them with any text editor.
+
 As an authoring tool, Org helps you write structured documents and
 provides exporting facilities. Org files can also be used for literate
 programming and reproducible research.  As a TODO lists manager, Org
@@ -3172,7 +3175,8 @@ precise behavior depends on how point arrived there---see
 incomplete and the internals are again displayed as plain text.
 Inserting the missing bracket hides the link internals again.  To show
 the internal structure of all links, use the menu: Org \rarr
-Hyperlinks \rarr Literal links.
+Hyperlinks \rarr Literal links, customize ~org-link-descriptive~, or use
+=literallinks= [[*Summary of In-Buffer Settings][startup option]].
 
 ** Internal Links
 :PROPERTIES:
@@ -3296,10 +3300,6 @@ Here is the full set of built-in link types:
 
   File links.  File name may be remote, absolute, or relative.
 
-  Additionally, you can specify a line number, or a text search.
-  In Org files, you may link to a headline name, a custom ID, or a
-  code reference instead.
-
   As a special case, "file" prefix may be omitted if the file name
   is complete, e.g., it starts with =./=, or =/=.
 
@@ -3363,44 +3363,50 @@ Here is the full set of built-in link types:
 
   Execute a shell command upon activation.
 
+
+For =file:= and =id:= links, you can additionally specify a line
+number, or a text search string, separated by =::=.  In Org files, you
+may link to a headline name, a custom ID, or a code reference instead.
+
 The following table illustrates the link types above, along with their
 options:
 
-| Link Type  | Example                                                  |
-|------------+----------------------------------------------------------|
-| http       | =http://staff.science.uva.nl/c.dominik/=                 |
-| https      | =https://orgmode.org/=                                   |
-| doi        | =doi:10.1000/182=                                        |
-| file       | =file:/home/dominik/images/jupiter.jpg=                  |
-|            | =/home/dominik/images/jupiter.jpg= (same as above)       |
-|            | =file:papers/last.pdf=                                   |
-|            | =./papers/last.pdf= (same as above)                      |
-|            | =file:/ssh:me@some.where:papers/last.pdf= (remote)       |
-|            | =/ssh:me@some.where:papers/last.pdf= (same as above)     |
-|            | =file:sometextfile::NNN= (jump to line number)           |
-|            | =file:projects.org=                                      |
-|            | =file:projects.org::some words= (text search)[fn:12]     |
-|            | =file:projects.org::*task title= (headline search)       |
-|            | =file:projects.org::#custom-id= (headline search)        |
-| attachment | =attachment:projects.org=                                |
-|            | =attachment:projects.org::some words= (text search)      |
-| docview    | =docview:papers/last.pdf::NNN=                           |
-| id         | =id:B7423F4D-2E8A-471B-8810-C40F074717E9=                |
-| news       | =news:comp.emacs=                                        |
-| mailto     | =mailto:adent@galaxy.net=                                |
-| mhe        | =mhe:folder= (folder link)                               |
-|            | =mhe:folder#id= (message link)                           |
-| rmail      | =rmail:folder= (folder link)                             |
-|            | =rmail:folder#id= (message link)                         |
-| gnus       | =gnus:group= (group link)                                |
-|            | =gnus:group#id= (article link)                           |
-| bbdb       | =bbdb:R.*Stallman= (record with regexp)                  |
-| irc        | =irc:/irc.com/#emacs/bob=                                |
-| help       | =help:org-store-link=                                    |
-| info       | =info:org#External links=                                |
-| shell      | =shell:ls *.org=                                         |
-| elisp      | =elisp:(find-file "Elisp.org")= (Elisp form to evaluate) |
-|            | =elisp:org-agenda= (interactive Elisp command)           |
+| Link Type  | Example                                                            |
+|------------+--------------------------------------------------------------------|
+| http       | =http://staff.science.uva.nl/c.dominik/=                           |
+| https      | =https://orgmode.org/=                                             |
+| doi        | =doi:10.1000/182=                                                  |
+| file       | =file:/home/dominik/images/jupiter.jpg=                            |
+|            | =/home/dominik/images/jupiter.jpg= (same as above)                 |
+|            | =file:papers/last.pdf=                                             |
+|            | =./papers/last.pdf= (same as above)                                |
+|            | =file:/ssh:me@some.where:papers/last.pdf= (remote)                 |
+|            | =/ssh:me@some.where:papers/last.pdf= (same as above)               |
+|            | =file:sometextfile::NNN= (jump to line number)                     |
+|            | =file:projects.org=                                                |
+|            | =file:projects.org::some words= (text search)[fn:12]               |
+|            | =file:projects.org::*task title= (headline search)                 |
+|            | =file:projects.org::#custom-id= (headline search)                  |
+| attachment | =attachment:projects.org=                                          |
+|            | =attachment:projects.org::some words= (text search)                |
+| docview    | =docview:papers/last.pdf::NNN=                                     |
+| id         | =id:B7423F4D-2E8A-471B-8810-C40F074717E9=                          |
+|            | =id:B7423F4D-2E8A-471B-8810-C40F074717E9::*task= (headline search) |
+| news       | =news:comp.emacs=                                                  |
+| mailto     | =mailto:adent@galaxy.net=                                          |
+| mhe        | =mhe:folder= (folder link)                                         |
+|            | =mhe:folder#id= (message link)                                     |
+| rmail      | =rmail:folder= (folder link)                                       |
+|            | =rmail:folder#id= (message link)                                   |
+| gnus       | =gnus:group= (group link)                                          |
+|            | =gnus:group#id= (article link)                                     |
+| bbdb       | =bbdb:R.*Stallman= (record with regexp)                            |
+| irc        | =irc:/irc.com/#emacs/bob=                                          |
+| help       | =help:org-store-link=                                              |
+| info       | =info:org#External links=                                          |
+| shell      | =shell:ls *.org=                                                   |
+| elisp      | =elisp:(find-file "Elisp.org")= (Elisp form to evaluate)           |
+|            | =elisp:org-agenda= (interactive Elisp command)                     |
 
 #+cindex: VM links
 #+cindex: Wanderlust links
@@ -3461,8 +3467,9 @@ current buffer:
 - /Org mode buffers/ ::
 
   For Org files, if there is a =<<target>>= at point, the link points
-  to the target.  Otherwise it points to the current headline, which
-  is also the description.
+  to the target.  If there is a named block (using =#+name:=) at
+  point, the link points to that name.  Otherwise it points to the
+  current headline, which is also the description.
 
   #+vindex: org-id-link-to-org-use-id
   #+cindex: @samp{CUSTOM_ID}, property
@@ -3479,6 +3486,32 @@ current buffer:
   file.  The =ID= property can be either a UUID (default) or a
   timestamp, depending on ~org-id-method~.  Later, when inserting the
   link, you need to decide which one to use.
+
+  #+vindex: org-id-link-consider-parent-id
+  #+vindex: org-id-link-use-context
+  #+vindex: org-link-context-for-files
+  When ~org-id-link-consider-parent-id~ is ~t~[fn:: Also,
+  ~org-link-context-for-files~ and ~org-id-link-use-context~ should be
+  both enabled (which they are, by default).], parent =ID= properties
+  are considered.  This allows linking to specific targets, named
+  blocks, or headlines (which may not have a globally unique =ID=
+  themselves) within the context of a parent headline or file which
+  does.
+
+  For example, given this org file:
+
+  #+begin_src org
+  ,* Parent
+  :PROPERTIES:
+  :ID: abc
+  :END:
+  ,** Child 1
+  ,** Child 2
+  #+end_src
+
+  Storing a link with point at "Child 1" will produce a link
+  =<id:abc::*Child 1>=, which precisely links to the "Child 1"
+  headline even though it does not have its own ID.
 
 - /Email/News clients: VM, Rmail, Wanderlust, MH-E, Gnus/ ::
 
@@ -3759,7 +3792,9 @@ the link completion function like this:
 :ALT_TITLE: Search Options
 :END:
 #+cindex: search option in file links
+#+cindex: search option in id links
 #+cindex: file links, searching
+#+cindex: id links, searching
 #+cindex: attachment links, searching
 
 File links can contain additional information to make Emacs jump to a
@@ -3771,8 +3806,8 @@ example, when the command ~org-store-link~ creates a link (see
 line as a search string that can be used to find this line back later
 when following the link with {{{kbd(C-c C-o)}}}.
 
-Note that all search options apply for Attachment links in the same
-way that they apply for File links.
+Note that all search options apply for Attachment and ID links in the
+same way that they apply for File links.
 
 Here is the syntax of the different ways to attach a search to a file
 link, together with explanations for each:
@@ -4107,10 +4142,9 @@ meaning here.].  For example:
         (sequence "|" "CANCELED(c)")))
 #+end_src
 
-#+vindex: org-fast-tag-selection-include-todo
 If you then press {{{kbd(C-c C-t)}}} followed by the selection key,
 the entry is switched to this state.  {{{kbd(SPC)}}} can be used to
-remove any TODO keyword from an entry[fn:15].
+remove any TODO keyword from an entry.
 
 *** Setting up keywords for individual files
 :PROPERTIES:
@@ -4366,7 +4400,7 @@ example, with the setting
 You not only define global TODO keywords and fast access keys, but
 also request that a time is recorded when the entry is set to =DONE=,
 and that a note is recorded when switching to =WAIT= or
-=CANCELED=[fn:16].  The setting for =WAIT= is even more special: the
+=CANCELED=[fn:15].  The setting for =WAIT= is even more special: the
 =!= after the slash means that in addition to the note taken when
 entering the state, a timestamp should be recorded when /leaving/ the
 =WAIT= state, if and only if the /target/ state does not configure
@@ -4664,7 +4698,7 @@ of) a large number of subtasks (see [[*Checkboxes]]).
 #+cindex: checkboxes
 
 #+vindex: org-list-automatic-rules
-Every item in a plain list[fn:17] (see [[*Plain Lists]]) can be made into
+Every item in a plain list[fn:16] (see [[*Plain Lists]]) can be made into
 a checkbox by starting it with the string =[ ]=.  This feature is
 similar to TODO items (see [[*TODO Items]]), but is more lightweight.
 Checkboxes are not included into the global TODO list, so they are
@@ -4683,6 +4717,36 @@ Here is an example of a checkbox list.
   - [ ] think about what music to play
   - [X] talk to the neighbors
 #+end_example
+
+#+cindex: statistics, for checkboxes
+#+cindex: checkbox statistics
+#+cindex: @samp{COOKIE_DATA}, property
+#+vindex: org-checkbox-hierarchical-statistics
+The =[2/4]= and =[1/3]= in the first and second line are cookies
+indicating how many checkboxes present in this entry have been checked
+off, and the total number of checkboxes present.  This can give you an
+idea on how many checkboxes remain, even without opening a folded
+entry.  The cookies can be placed into a headline or into (the first
+line of) a plain list item.  Each cookie covers checkboxes of direct
+children structurally below the headline/item on which the cookie
+appears[fn:: Set the variable ~org-checkbox-hierarchical-statistics~
+if you want such cookies to count all checkboxes below the cookie, not
+just those belonging to direct children.].  You have to insert the
+cookie yourself by typing either =[/]= or =[%]=.  With =[/]= you get
+an =n out of m= result, as in the examples above.  With =[%]= you get
+information about the percentage of checkboxes checked (in the above
+example, this would be =[50%]= and =[33%]=, respectively).  In a
+headline, a cookie can count either checkboxes below the heading or
+TODO states of children, and it displays whatever was changed last.
+Set the property =COOKIE_DATA= to either =checkbox= or =todo= to
+resolve this issue.
+
+#+cindex: blocking, of checkboxes
+#+cindex: checkbox blocking
+#+cindex: @samp{ORDERED}, property
+If the current outline node has an =ORDERED= property, checkboxes must
+be checked off in sequence, and an error is thrown if you try to check
+off a box while there are unchecked boxes above it.
 
 A checkbox can be in one of the three states:
 1. not checked =[ ]=
@@ -4714,36 +4778,6 @@ If all child checkboxes are checked, the parent checkbox is also checked.
   - [X] Peter
   - [X] Sarah
 #+end_example
-
-#+cindex: statistics, for checkboxes
-#+cindex: checkbox statistics
-#+cindex: @samp{COOKIE_DATA}, property
-#+vindex: org-hierarchical-checkbox-statistics
-The =[2/4]= and =[1/3]= in the first and second line are cookies
-indicating how many checkboxes present in this entry have been checked
-off, and the total number of checkboxes present.  This can give you an
-idea on how many checkboxes remain, even without opening a folded
-entry.  The cookies can be placed into a headline or into (the first
-line of) a plain list item.  Each cookie covers checkboxes of direct
-children structurally below the headline/item on which the cookie
-appears[fn:: Set the variable ~org-hierarchical-checkbox-statistics~
-if you want such cookies to count all checkboxes below the cookie, not
-just those belonging to direct children.].  You have to insert the
-cookie yourself by typing either =[/]= or =[%]=.  With =[/]= you get
-an =n out of m= result, as in the examples above.  With =[%]= you get
-information about the percentage of checkboxes checked (in the above
-example, this would be =[50%]= and =[33%]=, respectively).  In a
-headline, a cookie can count either checkboxes below the heading or
-TODO states of children, and it displays whatever was changed last.
-Set the property =COOKIE_DATA= to either =checkbox= or =todo= to
-resolve this issue.
-
-#+cindex: blocking, of checkboxes
-#+cindex: checkbox blocking
-#+cindex: @samp{ORDERED}, property
-If the current outline node has an =ORDERED= property, checkboxes must
-be checked off in sequence, and an error is thrown if you try to check
-off a box while there are unchecked boxes above it.
 
 The following commands work with checkboxes:
 
@@ -4880,15 +4914,6 @@ changes in the line.]
 To limit tag inheritance to specific tags, or to turn it off entirely,
 use the variables ~org-use-tag-inheritance~ and
 ~org-tags-exclude-from-inheritance~.
-
-#+vindex: org-tags-match-list-sublevels
-When a headline matches during a tags search while tag inheritance is
-turned on, all the sublevels in the same tree---for a simple match
-form---match as well[fn:: This is only true if the search does not
-involve more complex tests including properties (see [[*Property
-Searches]]).].  The list of matches may then become very long.  If you
-only want to see the first tags match in a subtree, configure the
-variable ~org-tags-match-list-sublevels~ (not recommended).
 
 #+vindex: org-agenda-use-tag-inheritance
 Tag inheritance is relevant when the agenda search tries to match
@@ -5099,6 +5124,11 @@ effect: start selection with {{{kbd(C-c C-c C-c)}}} instead of
 the special window is not even shown for single-key tag selection, it
 comes up only when you press an extra {{{kbd(C-c)}}}.
 
+#+vindex: org-fast-tag-selection-maximum-tags
+The number of tags displayed in the fast tag selection interface is
+limited by ~org-fast-tag-selection-maximum-tags~ to avoid running out
+of keyboard keys.  You can customize this variable.
+
 ** Tag Hierarchy
 :PROPERTIES:
 :DESCRIPTION: Create a hierarchy of tags.
@@ -5232,10 +5262,8 @@ related information into special lists.
 - {{{kbd(M-x org-agenda M)}}} (~org-tags-view~) ::
 
   #+kindex: M @r{(Agenda dispatcher)}
-  #+vindex: org-tags-match-list-sublevels
   Create a global list of tag matches from all agenda files, but check
-  only TODO items and force checking subitems (see the option
-  ~org-tags-match-list-sublevels~).
+  only TODO items.
 
 These commands all prompt for a match string which allows basic
 Boolean logic like =+boss+urgent-project1=, to find entries with tags
@@ -5317,10 +5345,10 @@ disks in a box like this:
   :END:
 #+end_example
 
-Properties can be inserted on buffer level.  That means they apply
+Properties can be inserted at the buffer level.  That means they apply
 before the first headline and can be inherited by all entries in a
-file.  Property blocks defined before first headline needs to be
-located at the top of the buffer, allowing only comments above.
+file.  Property blocks defined before the first headline must be at
+the top of the buffer with only comments above them.
 
 Properties can also be defined using lines like:
 
@@ -5470,8 +5498,8 @@ not be used as keys in the properties drawer:
 | =PRIORITY=     | The priority of the entry, a string with a single letter.      |
 | =SCHEDULED=    | The scheduling timestamp.                                      |
 | =TAGS=         | The tags defined directly in the headline.                     |
-| =TIMESTAMP=    | The first keyword-less timestamp in the entry.                 |
-| =TIMESTAMP_IA= | The first inactive timestamp in the entry.                     |
+| =TIMESTAMP=    | The first active keyword-less timestamp in the entry.[fn:17]   |
+| =TIMESTAMP_IA= | The first inactive keyword-less timestamp in the entry.        |
 | =TODO=         | The TODO keyword of the entry.                                 |
 
 ** Property Searches
@@ -5503,10 +5531,8 @@ Searches]]).
 - {{{kbd(M-x org-agenda M)}}} (~org-tags-view~) ::
 
   #+kindex: M @r{(Agenda dispatcher)}
-  #+vindex: org-tags-match-list-sublevels
   Create a global list of tag matches from all agenda files, but check
-  only TODO items and force checking of subitems (see the option
-  ~org-tags-match-list-sublevels~).
+  only TODO items.
 
 The syntax for the search string is described in [[*Matching tags and
 properties]].
@@ -6635,6 +6661,9 @@ state to =DONE= would actually switch the date like this:
    DEADLINE: <2005-11-01 Tue +1m>
 #+end_example
 
+When task contains multiple timestamps with repeater interval, all
+these timestamps are shifted.
+
 To mark a task with a repeater as DONE, use {{{kbd(C-- 1 C-c C-t)}}},
 i.e., ~org-todo~ with a numeric prefix argument of =-1=.
 
@@ -6681,16 +6710,16 @@ special repeaters =++= and =.+=.  For example:
    Marking this DONE shifts the date to exactly one hour from now.
 #+end_example
 
-#+vindex: org-agenda-skip-scheduled-if-deadline-is-shown
+#+vindex: org-agenda-skip-scheduled-repeats-after-deadline
 You may have both scheduling and deadline information for a specific
 task.  If the repeater is set for the scheduling information only, you
 probably want the repeater to be ignored after the deadline.  If so,
-set the variable ~org-agenda-skip-scheduled-if-deadline-is-shown~ to
-~repeated-after-deadline~.  However, any scheduling information
-without a repeater is no longer relevant once the task is done, and
-thus, removed upon repeating the task.  If you want both scheduling
-and deadline information to repeat after the same interval, set the
-same repeater for both timestamps.
+set the variable ~org-agenda-skip-scheduled-repeats-after-deadline~ to
+~t~.  However, any scheduling information without a repeater is no
+longer relevant once the task is done, and thus, removed upon
+repeating the task.  If you want both scheduling and deadline
+information to repeat after the same interval, set the same repeater
+for both timestamps.
 
 An alternative to using a repeater is to create a number of copies of
 a task subtree, with dates shifted in each copy.  The command
@@ -7823,10 +7852,10 @@ with prefix commands:
 
   Visit the last stored capture item in its buffer.
 
-#+vindex: org-capture-bookmark
+#+vindex: org-bookmark-names-plist
 #+vindex: org-capture-last-stored
 You can also jump to the bookmark ~org-capture-last-stored~, which is
-automatically created unless you set ~org-capture-bookmark~ to ~nil~.
+automatically created unless you customize ~org-bookmark-names-plist~.
 
 To insert the capture at point in an Org buffer, call ~org-capture~
 with a {{{kbd(C-0)}}} prefix argument.
@@ -8900,10 +8929,9 @@ commands:
 
   #+kindex: < < @r{(Agenda dispatcher)}
   If there is an active region, restrict the following agenda command
-  to the region.  Otherwise, restrict it to the current subtree[fn::
-  For backward compatibility, you can also press {{{kbd(0)}}} to
-  restrict to the current region/subtree.].  After pressing {{{kbd(<
-  <)}}}, you still need to press the character selecting the command.
+  to the region.  Otherwise, restrict it to the current subtree.
+  After pressing {{{kbd(< <)}}}, you still need to press the character
+  selecting the command.
 
 - {{{kbd(*)}}} ::
 
@@ -9216,14 +9244,12 @@ sparse trees with {{{kbd(C-c / m)}}}.
 
   #+kindex: M @r{(Agenda dispatcher)}
   #+findex: org-tags-view
-  #+vindex: org-tags-match-list-sublevels
   #+vindex: org-agenda-tags-todo-honor-ignore-options
   Like {{{kbd(m)}}}, but only select headlines that are also TODO
-  items and force checking subitems (see the variable
-  ~org-tags-match-list-sublevels~).  To exclude scheduled/deadline
-  items, see the variable ~org-agenda-tags-todo-honor-ignore-options~.
-  Matching specific TODO keywords together with a tags match is also
-  possible, see [[*Tag Searches]].
+  items.  To exclude scheduled/deadline items, see the variable
+  ~org-agenda-tags-todo-honor-ignore-options~.  Matching specific TODO
+  keywords together with a tags match is also possible, see [[*Tag
+  Searches]].
 
 The commands available in the tags list are described in [[*Commands in
 the Agenda Buffer]].
@@ -10084,9 +10110,13 @@ the other commands, point needs to be in the desired line.
 
   #+kindex: v a
   #+findex: org-agenda-archives-mode
+  #+vindex: org-agenda-start-with-archives-mode
   Toggle Archives mode.  In Archives mode, trees that are archived
   (see [[*Internal archiving]]) are also scanned when producing the
-  agenda.  To exit archives mode, press {{{kbd(v a)}}} again.
+  agenda.  To exit archives mode, press {{{kbd(v a)}}} again.  The
+  initial setting for this mode in new agenda buffers can set with the
+  variable ~org-agenda-start-with-archives-mode~, which can be set
+  with the same values as ~org-agenda-archives-mode~.
 
 - {{{kbd(v A)}}} ::
 
@@ -11730,6 +11760,39 @@ command:
   - integer number, limit width to that specified number of pixels.
   - ~nil~, do not limit the width.
 
+  #+vindex: org-image-align
+  Org mode can left-align, center or right-align the display of inline
+  images.  This setting is controlled (globally) by ~org-image-align~.
+  Only standalone images are affected, corresponding to links with no
+  surrounding text in their paragraph except for whitespace.  Its
+  value can be the following:
+  - (default) The symbol ~left~, which inserts the image where the
+    link appears in the buffer.
+  - The symbol ~center~, which will preview links centered in the
+    Emacs window.
+  - The symbol ~right~, which will preview links right-aligned in the
+    Emacs window.
+
+  Inline image alignment can be specified for each link using the
+  =#+ATTR.*= keyword if it matches an alignment specification like:
+  #+begin_example
+  ,#+ATTR_HTML: :align center
+  #+end_example
+  Org will use the alignment specification from any =#+ATTR.*=
+  keyword, such as =#+ATTR_HTML= or =#+ATTR_LATEX=, but =#+ATTR_ORG=
+  (if present) will override the others.  For instance, this link
+  #+begin_example
+  ,#+ATTR_HTML: :align right
+  ,#+ATTR_ORG: :align center
+  [[/path/to/image/file.png]]
+  #+end_example
+  will be displayed centered in Emacs but exported right-aligned to
+  HTML.
+
+  When =#+ATTR_ORG= is not set, inline image alignment is also read
+  from the =:center= attribute supported by some export backends (like
+  HTML, LaTeX and Beamer.)
+
 #+vindex: org-cycle-inline-images-display
 Inline images can also be displayed when cycling the folding state.
 When custom option ~org-cycle-inline-images-display~ is set, the
@@ -12385,11 +12448,11 @@ value.
 #+end_example
 
 #+cindex: @samp{TOC}, keyword
-Org normally inserts the table of contents directly before the first
-headline of the file.  To move the table of contents to a different
-location, first turn off the default with ~org-export-with-toc~
-variable or with =#+OPTIONS: toc:nil=.  Then insert =#+TOC: headlines
-N= at the desired location(s).
+Org normally inserts the table of contents in front of the exported
+document.  To move the table of contents to a different location,
+first turn off the default with ~org-export-with-toc~ variable or with
+=#+OPTIONS: toc:nil=.  Then insert =#+TOC: headlines N= at the desired
+location(s).
 
 #+begin_example
 ,#+OPTIONS: toc:nil
@@ -12449,7 +12512,7 @@ the table of contents.
 #+cindex: export, include files
 #+cindex: @samp{INCLUDE}, keyword
 
-During export, you can include the content of another file.  For
+[[*Summary of the export process][During export]], you can include the content of another file.  For
 example, to include your =.emacs= file, you could use:
 
 : #+INCLUDE: "~/.emacs" src emacs-lisp
@@ -12495,7 +12558,7 @@ Inclusions may specify a file-link to extract an object matched by
 ranges for =:lines= keyword are relative to the requested element.
 Therefore,
 
-: #+INCLUDE: "./paper.org::*conclusion" :lines 1-20
+: #+INCLUDE: "./paper.org::*conclusion" :lines "1-20"
 
 #+texinfo: @noindent
 includes the first 20 lines of the headline named =conclusion=.
@@ -13887,8 +13950,11 @@ general options (see [[*Export Settings]]).
   #+cindex: @samp{LANGUAGE}, keyword
   #+vindex: org-latex-packages-alist
   #+vindex: org-latex-language-alist
+  #+vindex: org-export-default-language
 
-  Language code of the primary document language.
+  Language code of the primary document language.  When =LANGUAGE=
+  keyword is not not specified use the value of
+  ~org-export-default-language~ (by default - =en=, American English)
 
   The list of language codes supported by Org is stored in the
   variable ~org-latex-language-alist~.
@@ -15652,17 +15718,26 @@ the general options (see [[*Export Settings]]).
 - =TEXINFO_DIR_CATEGORY= ::
 
   #+cindex: @samp{TEXINFO_DIR_CATEGORY}, keyword
-  The directory category of the document.
+  The directory category of the document.  Defaults to ~Misc~.
 
-- =TEXINFO_DIR_TITLE= ::
+- =TEXINFO_DIR_NAME= ::
 
-  #+cindex: @samp{TEXINFO_DIR_TITLE}, keyword
-  The directory title of the document.
+  #+cindex: @samp{TEXINFO_DIR_NAME}, keyword
+  The directory name of the document.
+  This is the short name under which the ~m~ command will find your
+  manual in the main Info directory.  It defaults to the base name of
+  the Texinfo file.
+
+  The full form of the Texinfo entry is ~* DIRNAME: NODE.~ where ~NODE~
+  is usually just ~(FILENAME)~.  Normally this option only provides the
+  ~DIRNAME~ part, but if you need more control, it can also be the full
+  entry (recognized by the presence of parentheses or a leading ~* ~).
 
 - =TEXINFO_DIR_DESC= ::
 
   #+cindex: @samp{TEXINFO_DIR_DESC}, keyword
   The directory description of the document.
+  Defaults to the title of the document.
 
 - =TEXINFO_PRINTED_TITLE= ::
 
@@ -15746,11 +15821,11 @@ Copyright information is printed on the back of the title page.
 #+cindex: @code{install-info}, in Texinfo export
 
 #+cindex: @samp{TEXINFO_DIR_CATEGORY}, keyword
-#+cindex: @samp{TEXINFO_DIR_TITLE}, keyword
+#+cindex: @samp{TEXINFO_DIR_NAME}, keyword
 #+cindex: @samp{TEXINFO_DIR_DESC}, keyword
 The end result of the Texinfo export process is the creation of an
 Info file.  This Info file's metadata has variables for category,
-title, and description: =TEXINFO_DIR_CATEGORY=, =TEXINFO_DIR_TITLE=,
+title, and description: =TEXINFO_DIR_CATEGORY=, =TEXINFO_DIR_NAME=,
 and =TEXINFO_DIR_DESC= keywords that establish where in the Info
 hierarchy the file fits.
 
@@ -15758,7 +15833,7 @@ Here is an example that writes to the Info directory file:
 
 #+begin_example
 ,#+TEXINFO_DIR_CATEGORY: Emacs
-,#+TEXINFO_DIR_TITLE: Org Mode: (org)
+,#+TEXINFO_DIR_NAME: Org Mode
 ,#+TEXINFO_DIR_DESC: Outline-based notes management and organizer
 #+end_example
 
@@ -16166,7 +16241,7 @@ Texinfo code.
 ,#+TEXINFO_HEADER: @syncodeindex pg cp
 
 ,#+TEXINFO_DIR_CATEGORY: Texinfo documentation system
-,#+TEXINFO_DIR_TITLE: sample: (sample)
+,#+TEXINFO_DIR_NAME: sample
 ,#+TEXINFO_DIR_DESC: Invoking sample
 
 ,#+TEXINFO_PRINTED_TITLE: GNU Sample
@@ -16307,6 +16382,18 @@ when exporting.  To force the backend to inherit the =LOCATION=,
 =TIMEZONE= and =CLASS= properties, configure the
 ~org-use-property-inheritance~ variable.
 
+=SUMMARY=, =LOCATION=, and =DESCRIPTION= properties can define
+multi-line summary, location, or description using =<PROPERTY>+=
+syntax (see [[*Property Syntax]]):
+
+: * Meeting at location with multi-line address
+: <2024-01-08 Mon 14:20-15:00>
+: :PROPERTIES:
+: :LOCATION:  Someplace
+: :LOCATION+: Some Street 5
+: :LOCATION+: 12345 Small Town
+: :END:
+
 #+vindex: org-icalendar-include-body
 When Org entries do not have =SUMMARY=, =DESCRIPTION=, =LOCATION= and
 =CLASS= properties, the iCalendar export backend derives the summary
@@ -16330,6 +16417,15 @@ information.  The iCalendar standard defines three visibility classes:
 - =PRIVATE= :: The entry can be retrieved only by its owner.
 The server should treat unknown class properties the same as
 =PRIVATE=.
+
+#+cindex: @samp{ICAL-TTL}, keyword
+#+vindex: org-icalendar-ttl
+The exported iCalendar file can advise clients how often to check for
+updates.  This duration can be set globally with the
+~org-icalendar-ttl~ variable, or on a per-document basis with the
+=ICAL-TTL= keyword.  This option should be set using the iCalendar
+notation for time durations; consult the docstring of
+~org-icalendar-ttl~ for more details.
 
 Exporting to iCalendar format depends in large part on the
 capabilities of the destination application.  Some are more lenient
@@ -16364,12 +16460,14 @@ for usage and configuration details.
 :END:
 
 #+vindex: org-export-before-processing-hook
+#+vindex: org-export-before-processing-functions
 #+vindex: org-export-before-parsing-hook
 The export process executes two hooks before the actual exporting
-begins.  The first hook, ~org-export-before-processing-hook~, runs
-before any expansions of macros, Babel code, and include keywords in
-the buffer.  The second hook, ~org-export-before-parsing-hook~, runs
-before the buffer is parsed.
+begins.  The first hook, ~org-export-before-processing-functions~,
+runs before any expansions of macros, Babel code, and include keywords
+in the buffer.  The second hook,
+~org-export-before-parsing-functions~, runs before the buffer is
+parsed.
 
 Functions added to these hooks are called with a single argument: the
 export backend actually used, as a symbol.  You may use them for
@@ -16388,7 +16486,7 @@ BACKEND is the export backend being used, as a symbol."
      ;; the docstring of `org-map-entries' for details.
      (setq org-map-continue-from (point)))))
 
-(add-hook 'org-export-before-parsing-hook #'my-headline-removal)
+(add-hook 'org-export-before-parsing-functions #'my-headline-removal)
 #+end_src
 
 *** Filters
@@ -16470,6 +16568,158 @@ debugging.
 ,#+END_SRC
 #+end_example
 
+*** Summary of the export process
+:PROPERTIES:
+:UNNUMBERED: notoc
+:END:
+
+#+findex: org-export-as
+Org mode export is a multi-step process that works on a temporary copy
+of the buffer.  The export process consists of 4 major steps:
+
+1. Process the temporary copy, making necessary changes to the buffer
+   text;
+
+2. Parse the buffer, converting plain Org markup into an abstract
+   syntax tree (AST);
+
+3. Convert the AST to text, as prescribed by the selected export
+   backend;
+
+4. Post-process the resulting exported text.
+
+
+#+texinfo: @noindent
+Process temporary copy of the source Org buffer [fn::Unless
+otherwise specified, each step of the export process only operates on
+the accessible portion of the buffer.  When subtree export is selected
+(see [[*The Export Dispatcher]]), the buffer is narrowed to the body of
+the selected subtree, so that the rest of the buffer text, except
+export keywords, does not contribute to the export output.]:
+
+1. Execute ~org-export-before-processing-functions~ (see [[*Export hooks]]);
+
+2. Expand =#+include= keywords in the whole buffer (see
+   [[*Include Files]]);
+
+3. Remove commented subtrees in the whole buffer (see [[*Comment
+   Lines]]);
+
+4. Replace macros in the whole buffer (see [[*Macro Replacement]]);
+
+5. When ~org-export-use-babel~ is non-nil (default), process code
+   blocks:
+
+   - Leave code blocks inside archived subtrees (see [[*Internal
+     archiving]]) as is;
+
+   - Evaluate all the other code blocks according to code block
+     headers (see [[*Limit code block evaluation]]);
+
+   - Remove code, results of evaluation, both, or neither according
+     to =:exports= header argument (see [[*Exporting Code Blocks]]).
+
+
+#+texinfo: @noindent
+Parse the temporary buffer, creating AST:
+
+1. Execute ~org-export-before-parsing-functions~ (see [[*Export hooks]]).
+   The hook functions may still modify the buffer;
+
+2. Calculate export option values according to subtree-specific export
+   settings, in-buffer keywords, =#+BIND= keywords, and buffer-local
+   and global customization.  The whole buffer is considered;
+
+3. When ~org-org-with-cite-processors~ is non-nil (default), determine
+   contributing bibliographies and record them into export options
+   (see [[*Citations]]).  The whole buffer is considered;
+
+4. Execute ~org-export-filter-options-functions~;
+
+5. Parse the accessible portion of the temporary buffer to generate an
+   AST.  The AST is a nested list of lists representing Org syntax
+   elements (see [[https://orgmode.org/worg/dev/org-element-api.html][Org Element API]] for more details):
+
+   : (org-data ...
+   :  (heading
+   :   (section
+   :    (paragraph (plain-text) (bold (plain-text))))
+   :   (heading)
+   :   (heading (section ...))))
+
+   Past this point, modifications to the temporary buffer no longer
+   affect the export; Org export works only with the AST;
+
+6. Remove elements that are not exported from the AST:
+
+   - Headings according to =SELECT_TAGS= and =EXCLUDE_TAGS= export
+     keywords; =task=, =inline=, =arch= export options (see
+     [[*Export Settings]]);
+
+   - Comments;
+
+   - Clocks, drawers, fixed-width environments, footnotes, LaTeX
+     environments and fragments, node properties, planning lines,
+     property drawers, statistics cookies, timestamps, etc according
+     to =#+OPTIONS= keyword (see [[*Export Settings]]);
+
+   - Table rows containing width and alignment markers (see [[*Column
+     Width and Alignment]]);
+
+   - Table columns containing recalc marks (see [[*Advanced features]]).
+
+7. Expand environment variables in file link AST nodes according to
+   the =expand-links= export option (see [[*Export Settings]]);
+
+8. Execute ~org-export-filter-parse-tree-functions~.  These
+   functions can modify the AST by side effects;
+
+9. When ~org-org-with-cite-processors~ is non-nil (default), replace
+   citation AST nodes and =#+print_bibliography= keyword AST nodes as
+   prescribed by the selected citation export processor (see [[*Citation
+   export processors]]).
+
+
+#+texinfo: @noindent
+Convert the AST to text by traversing the AST nodes, depth-first:
+
+1. Convert the leaf nodes (without children) to text as prescribed
+   by "transcoders" in the selected export backend
+   [fn:: See transcoders and ~:translate-alist~ in the docstrings
+   of ~org-export-define-backend~ and ~org-export-define-derived-backend~.];
+
+2. Pass the converted nodes through the corresponding export
+   filters (see [[*Filters]]);
+
+3. Concatenate all the converted child nodes to produce parent
+   node contents;
+
+4. Convert the nodes with children to text, passing the nodes
+   themselves and their contents to the corresponding transcoders
+   and then to the export filters (see [[*Filters]]).
+
+
+#+texinfo: @noindent
+Post-process the exported text:
+
+  1. Post-process the converted AST, as prescribed by the export
+     backend. [fn:: See ~inner-template~ in the docstring of ~org-export-define-backend~.]
+     This step usually adds generated content (like Table of Contents)
+     to the exported text;
+
+  2. Execute ~org-export-filter-body-functions~;
+
+  3. Unless body-only export is selected (see [[*The Export Dispatcher]]),
+     add the necessary metadata to the final document, as prescribed
+     by the export backend.  Examples: Document author/title; HTML
+     headers/footers; LaTeX preamble;
+
+  4. When ~org-org-with-cite-processors~ is non-nil (default), add
+     bibliography metadata, as prescribed by the citation export
+     processor;
+
+  5. Execute ~org-export-filter-final-output-functions~.
+
 *** Extending an existing backend
 :PROPERTIES:
 :UNNUMBERED: notoc
@@ -16526,7 +16776,9 @@ buffer:
 
 Further steps to consider would be an interactive function,
 self-installing an item in the export dispatcher menu, and other
-user-friendly improvements.
+user-friendly improvements.  See
+<https://orgmode.org/worg/dev/org-export-reference.html> for more
+details.
 
 ** Export Region
 :PROPERTIES:
@@ -16917,6 +17169,7 @@ to HTML, the following links all point to a dedicated anchor in
 :END:
 #+cindex: sitemap, of published pages
 
+#+vindex: org-publish-project-alist
 The following properties may be used to control publishing of
 a map of files for a given project.
 
@@ -16933,6 +17186,12 @@ a map of files for a given project.
 - ~:sitemap-title~ ::
 
   Title of sitemap page.  Defaults to name of file.
+
+- ~:sitemap-style~ ::
+
+    Can be ~list~ (site-map is just an itemized list of the titles of
+    the files involved) or ~tree~ (the directory structure of the
+    source files is reflected in the site-map).  Defaults to ~tree~.
 
 - ~:sitemap-format-entry~ ::
 
@@ -16978,21 +17237,6 @@ a map of files for a given project.
 - ~:sitemap-ignore-case~ ::
 
   Should sorting be case-sensitive?  Default ~nil~.
-
-- ~:sitemap-file-entry-format~ ::
-
-  With this option one can tell how a sitemap's entry is formatted in
-  the sitemap.  This is a format string with some escape sequences:
-  ~%t~ stands for the title of the file, ~%a~ stands for the author of
-  the file and ~%d~ stands for the date of the file.  The date is
-  retrieved with the ~org-publish-find-date~ function and formatted
-  with ~org-publish-sitemap-date-format~.  Default ~%t~.
-
-- ~:sitemap-date-format~ ::
-
-  Format string for the ~format-time-string~ function that tells how
-  a sitemap entry's date is to be formatted.  This property bypasses
-  ~org-publish-sitemap-date-format~ which defaults to ~%Y-%m-%d~.
 
 *** Generating an index
 :PROPERTIES:
@@ -17187,6 +17431,7 @@ keywords.
 :DESCRIPTION: create, follow and export citations.
 :END:
 #+cindex: citation
+#+cindex: citation processor
 
 The =oc.el= library provides tooling to handle citations in Org via
 "citation processors" that offer some or all of the following
@@ -17203,6 +17448,10 @@ To use a "citation processor", the user must load them; for example;
 (require 'oc-bibtex)
 #+end_src
 
+#+vindex: org-cite-activate-processor
+#+vindex: org-cite-follow-processor
+#+vindex: org-cite-insert-processor
+#+vindex: org-cite-export-processor
 They can then configure them with ~org-cite-activate-processor~,
 ~org-cite-follow-processor~, ~org-cite-insert-processor~, and
 ~org-cite-export-processors~ respectively.
@@ -17211,10 +17460,14 @@ The included "basic" processor provides all four capabilities.
 
 ** Citations
 
+#+cindex: bibliography
+
+#+vindex: org-cite-global-bibliography
 Before adding citations, first set one-or-more bibliographies, either
 globally with ~org-cite-global-bibliography~, or locally using one or
 more "bibliography" keywords.
 
+#+cindex: @samp{BIBLIOGRAPHY}, keyword
 #+begin_example
 #+bibliography: SomeFile.bib
 #+bibliography: /some/other/file.json
@@ -17236,20 +17489,39 @@ identifying a reference in the bibliography.
 
 - Each key starts with the character =@=.
 
+  : [cite:@key]
+
 - Each key can be qualified by a /prefix/ (e.g.\nbsp{}"see ") and/or
   a /suffix/ (e.g.\nbsp{}"p.\nbsp{}123"), giving information useful or necessary
   for the comprehension of the citation but not included in the
   reference.
 
+  : [cite:see @key p. 123]
+
 - A single citation can cite more than one reference ; the keys are
   separated by semicolons ; the formatting of such citation groups is
   specified by the style.
+
+  : [cite:@key1;@key2;@key3]
 
 - One can also specify a stylistic variation for the citations by
   inserting a =/= and a style name between the =cite= keyword and the
   colon; this usually makes sense only for the author-year styles.
 
-: [cite/style:common prefix ;prefix @key suffix; ... ; common suffix]
+  : [cite/style:common prefix ;prefix @key suffix; ... ; common suffix]
+
+  When style is not specified, default style is used
+
+  + either the default style specified in =CITE_EXPORT= keyword (see
+    [[*Citation export processors]])
+
+    : #+cite_export: basic numeric noauthor/bare
+    : [cite:@key] is the same as [cite/noauthor/bare:@key]
+
+  + or using default =nil= style
+
+    : [cite:@key] is the same as [cite/nil:@key]
+
 
 The only mandatory elements are:
 
@@ -17289,11 +17561,13 @@ Org currently includes the following export processors:
     with LaTeX, which overcomes some serious BibTeX limitations, but
     has not (yet?)\nbsp{}been widely adopted by publishers.
 
-The =CITE_EXPORT= keyword specifies the export processor and the
-citation (and possibly reference) style(s); for example (all arguments
-are optional)
+#+cindex: @samp{CITE_EXPORT}, keyword
+The =CITE_EXPORT= keyword specifies the export processor, citation
+style, and bibliography style; for example (all arguments are
+optional)
 
-: #+cite_export: basic author author-year
+: #+cite_export: [export processor name] [bibliography style] [default citation style]
+: #+cite_export: basic author-year author
 
 #+texinfo: @noindent
 specifies the "basic" export processor with citations inserted as
@@ -17315,8 +17589,20 @@ conformant to the Harvard style and the specification of the
 Wolkers-Kluwer publisher; since it relies on the ~bibtex~ processor of
 your LaTeX installation, it won't export to anything but PDF.
 
+: #+cite_export: biblatex numeric,backend=bibtex
+
+#+vindex: org-cite-biblatex-options
+#+texinfo: @noindent
+specifies the =biblatex= export processor with the default =numeric=
+style and the =bibtex= backend. Always define the style first and then
+the rest of load-time options for the =biblatex=
+package. Alternatively, use the ~org-cite-biblatex-options~ variable
+in your Emacs configuration. It will only export to PDF, since it
+relies on the ~biblatex~ processor of your LaTeX installation;
+
 ** Bibliography printing
 
+#+cindex: @samp{PRINT_BIBLIOGRAPHY}, keyword
 The =PRINT_BIBLIOGRAPHY= keyword specifies where the bibliography
 should be printed (note the colon):
 
@@ -17352,8 +17638,9 @@ commas, but without any space in-between:
 : #+print_bibliography: :keyword "algebraic logic" :nottype article,book
 
 The "biblatex" export processor accepts all options supported by
-BibLaTeX's ~\printbibliography~ command, while the "csl" processor
-accepts the following ones:
+BibLaTeX's ~\printbibliography~ command.
+
+The "csl" processor accepts the following options:
 
 - =:keyword <keyword(,keyword2...)>= :: Print only entries whose
   keyword field contains all given keywords.
@@ -17514,7 +17801,8 @@ or
   from table formulas (see [[*The Spreadsheet]]) can use the name to
   reference a source block.  This naming serves the same purpose as
   naming Org tables.  Org mode requires unique names.  For duplicate
-  names, Org mode's behavior is undefined.
+  names, Org mode's behavior is undefined.  Inline code blocks cannot
+  have a name.
 
 - =#+BEGIN_SRC= ... =#+END_SRC= ::
 
@@ -17842,10 +18130,12 @@ Here are examples of passing values by reference:
   names---because the second row is a horizontal rule---then Org
   removes the column names, processes the table, puts back the column
   names, and then writes the table to the results block.  Using =yes=,
-  Org does the same to the first row, even if the initial table does
-  not contain any horizontal rule.  When set to =no=, Org does not
-  pre-process column names at all.
+  Org does the same to the first non-hline row, even if the initial
+  table does not contain any horizontal rule.  When set to =no=, Org
+  does not pre-process column names at all.
 
+  # We keep python blocks unindented on purpose - to keep the example
+  # working even for users who changed the default value of ~org-src-preserve-indentation~
   #+begin_example
   ,#+NAME: less-cols
   | a |
@@ -17854,7 +18144,7 @@ Here are examples of passing values by reference:
   | c |
 
   ,#+BEGIN_SRC python :var tab=less-cols :colnames nil
-    return [[val + '*' for val in row] for row in tab]
+  return [[val + '*' for val in row] for row in tab]
   ,#+END_SRC
 
   ,#+RESULTS:
@@ -17879,7 +18169,7 @@ Here are examples of passing values by reference:
   | two | 6 | 7 | 8 | 9 | 10 |
 
   ,#+BEGIN_SRC python :var tab=with-rownames :rownames yes
-    return [[val + 10 for val in row] for row in tab]
+  return [[val + 10 for val in row] for row in tab]
   ,#+END_SRC
 
   ,#+RESULTS:
@@ -17930,6 +18220,7 @@ a colon, for example: =:var table=other-file.org:example-table=.
 
   A code block name, as assigned by =NAME= keyword, followed by
   parentheses and optional arguments passed within the parentheses.
+  The block is evaluated with point at its location.
 
   #+begin_example
   ,#+NAME: double
@@ -18509,6 +18800,8 @@ described in the documentation for individual languages.  See
   those =hline= symbols raise unbound variable errors.  A =yes=
   accepts such lines, as demonstrated in the following example.
 
+  # We keep python blocks unindented on purpose - to keep the example
+  # working even for users who changed the default value of ~org-src-preserve-indentation~
   #+begin_example
   ,#+NAME: many-cols
   | a | b | c |
@@ -18519,7 +18812,7 @@ described in the documentation for individual languages.  See
 
   ,#+NAME: no-hline
   ,#+BEGIN_SRC python :var tab=many-cols :hlines no
-    return tab
+  return tab
   ,#+END_SRC
 
   ,#+RESULTS: no-hline
@@ -18529,7 +18822,7 @@ described in the documentation for individual languages.  See
 
   ,#+NAME: hlines
   ,#+BEGIN_SRC python :var tab=many-cols :hlines yes
-    return tab
+  return tab
   ,#+END_SRC
 
   ,#+RESULTS: hlines
@@ -19354,9 +19647,10 @@ By default a newline separates each noweb reference concatenation.  To
 use a different separator, edit the =noweb-sep= header argument.
 
 Alternatively, Org can include the results of evaluation of a single
-code block rather than its body.  Evaluation occurs when parentheses,
-possibly including arguments, are appended to the code block name, as
-shown below.
+code block rather than its body [[fn::The reference is evaluated with
+point at the referenced block, using its header arguments (including
+inherited)].  Evaluation occurs when parentheses, possibly including
+arguments, are appended to the code block name, as shown below.
 
 : <<NAME(optional arguments)>>
 
@@ -19368,10 +19662,12 @@ Here is an example that demonstrates how the exported content changes
 when noweb style references are used with parentheses versus without.
 Given:
 
+# We keep python blocks unindented on purpose - to keep the example
+# working even for users who changed the default value of ~org-src-preserve-indentation~
 #+begin_example
 ,#+NAME: some-code
 ,#+BEGIN_SRC python :var num=0 :results output :exports none
-  print(num*10)
+print(num*10)
 ,#+END_SRC
 #+end_example
 
@@ -19443,15 +19739,17 @@ newlines in them, inline noweb references are acceptable.
 This feature can also be used for management of indentation in
 exported code snippets.  With:
 
+# We keep python blocks unindented on purpose - to keep the example
+# working even for users who changed the default value of ~org-src-preserve-indentation~
 #+begin_example
 ,#+NAME: if-true
 ,#+BEGIN_SRC python :exports none
-  print('do things when true')
+print('do things when true')
 ,#+end_src
 
 ,#+name: if-false
 ,#+begin_src python :exports none
-  print('do things when false')
+print('do things when false')
 ,#+end_src
 #+end_example
 
@@ -19460,10 +19758,10 @@ this code block:
 
 #+begin_example
 ,#+begin_src python :noweb yes :results output
-  if true:
-      <<if-true>>
-  else:
-      <<if-false>>
+if true:
+    <<if-true>>
+else:
+    <<if-false>>
 ,#+end_src
 #+end_example
 
@@ -20196,6 +20494,17 @@ changes.
   | =inlineimages=   | Show inline images.                   |
   | =noinlineimages= | Do not show inline images on startup. |
 
+  #+vindex: org-link-descriptive
+  Bracket links in Org buffers are displayed hiding the link path and
+  brackets.  For example, =[[https://orgmode.org][Org Website]]= is,
+  by default, displayed as "Org Website", hiding the link itself and
+  just displaying its description.  Alternatively, the links can be
+  displayed in full.  The corresponding variable is
+  ~org-link-descriptive~.
+
+  | =descriptivelinks= | Hide path and brackets in links. |
+  | =literallinks=     | Do not hide anything.            |
+
   #+vindex: org-log-done
   #+vindex: org-log-note-clock-out
   #+vindex: org-log-repeat
@@ -20267,6 +20576,7 @@ changes.
   | =fnconfirm=  | Offer automatic label for editing or confirmation.     |
   | =fnadjust=   | Automatically renumber and sort footnotes.             |
   | =nofnadjust= | Do not renumber and sort automatically.                |
+  | =fnanon=     | Create anonymous footnotes with ~org-footnote-new~.    |
 
   #+vindex: org-hide-block-startup
   #+vindex: org-hide-drawer-startup
@@ -20326,8 +20636,8 @@ For more information, see [[info:emacs::Regexps][Regular Expressions in Emacs]].
 :END:
 
 A reference document providing a formal description of Org's syntax is
-available as [[https://orgmode.org/worg/dev/org-syntax.html][a draft on Worg]], written and maintained by Nicolas
-Goaziou.  It defines Org's core internal concepts such as "headlines",
+available as [[https://orgmode.org/worg/org-syntax.html][a draft on Worg]], initially written by Nicolas Goaziou.
+It defines Org's core internal concepts such as "headlines",
 "sections", "affiliated keywords", "(greater) elements" and "objects".
 Each part of an Org document belongs to one of the previous
 categories.
@@ -21252,7 +21562,7 @@ The following =ol-man.el= file implements it
 PATH should be a topic that can be thrown at the man command."
   (funcall org-man-command path))
 
-(defun org-man-store-link ()
+(defun org-man-store-link (&optional _interactive?)
   "Store a link to a man page."
   (when (memq major-mode '(Man-mode woman-mode))
     ;; This is a man page, we do make this link.
@@ -21312,13 +21622,15 @@ A review of =ol-man.el=:
 
    For example, ~org-man-store-link~ is responsible for storing a link
    when ~org-store-link~ (see [[*Handling Links]]) is called from a buffer
-   displaying a man page.  It first checks if the major mode is
-   appropriate.  If check fails, the function returns ~nil~, which
-   means it isn't responsible for creating a link to the current
-   buffer.  Otherwise the function makes a link string by combining
-   the =man:= prefix with the man topic.  It also provides a default
-   description.  The function ~org-insert-link~ can insert it back
-   into an Org buffer later on.
+   displaying a man page.  It is passed an argument ~interactive?~
+   which this function does not use, but other store functions use to
+   behave differently when a link is stored interactively by the user.
+   It first checks if the major mode is appropriate.  If check fails,
+   the function returns ~nil~, which means it isn't responsible for
+   creating a link to the current buffer.  Otherwise the function
+   makes a link string by combining the =man:= prefix with the man
+   topic.  It also provides a default description.  The function
+   ~org-insert-link~ can insert it back into an Org buffer later on.
 
 ** Adding Export Backends
 :PROPERTIES:
@@ -22600,7 +22912,7 @@ that are mentioned in the manual.  For a more complete list, use
 
 This manual is for Org version {{{version}}}.
 
-Copyright \copy 2004--2023 Free Software Foundation, Inc.
+Copyright \copy 2004--2024 Free Software Foundation, Inc.
 
 #+begin_quote
 Permission is granted to copy, distribute and/or modify this document
@@ -22621,7 +22933,7 @@ modify this GNU manual."
 #+export_file_name: org.texi
 
 #+texinfo_dir_category: Emacs editing modes
-#+texinfo_dir_title: Org Mode: (org)
+#+texinfo_dir_name: Org Mode: (org)
 #+texinfo_dir_desc: Outline-based notes management and organizer
 
 * Footnotes
@@ -22701,19 +23013,19 @@ from the list of stored links.  To keep it in the list for later use,
 use a triple {{{kbd(C-u)}}} prefix argument to {{{kbd(C-c C-l)}}}, or
 configure the option ~org-link-keep-stored-after-insertion~.
 
-[fn:15] Check also the variable ~org-fast-tag-selection-include-todo~,
-it allows you to change the TODO state through the tags interface (see
-[[*Setting Tags]]), in case you like to mingle the two concepts.  Note
-that this means you need to come up with unique keys across both sets
-of keywords.
-
-[fn:16] It is possible that Org mode records two timestamps when you
+[fn:15] It is possible that Org mode records two timestamps when you
 are using both ~org-log-done~ and state change logging.  However, it
 never prompts for two notes: if you have configured both, the state
 change recording note takes precedence and cancel the closing note.
 
-[fn:17] With the exception of description lists.  But you can allow it
+[fn:16] With the exception of description lists.  But you can allow it
 by modifying ~org-list-automatic-rules~ accordingly.
+
+[fn:17] For both =TIMESTAMP= and =TIMESTAMP_IA=: the word "first"
+refers to the first occurrence in the entry, not the earliest in time;
+the prefix =CLOCK:= at the beginning of a clock entry is considered a
+keyword in this context; and timestamps inside property drawers are
+ignored.
 
 [fn:18] An age can be defined as a duration, using units defined in
 ~org-duration-units~, e.g., =3d 1h=.  If any value in the column is as
@@ -22904,7 +23216,6 @@ values.
   (concat prompt command)
 ,#+END_SRC
 #+end_example
-
 
 [fn:50] Org Indent mode also sets ~wrap-prefix~ correctly for
 indenting and wrapping long lines of headlines or text.  This minor

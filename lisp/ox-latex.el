@@ -1,6 +1,6 @@
 ;;; ox-latex.el --- LaTeX Backend for Org Export Engine -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2011-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2011-2024 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou at gmail dot com>
 ;; Maintainer: Daniel Fleischer <danflscr@gmail.com>
@@ -298,23 +298,10 @@ cdr is a property list.  Valid keywords for this list can be:
 - `:script-tag' the script otf tag.")
 
 
-(defconst org-latex-line-break-safe "\\\\[0pt]"
-  "Linebreak protecting the following [...].
 
-Without \"[0pt]\" it would be interpreted as an optional argument to
-the \\\\.
-
-This constant, for example, makes the below code not err:
-
-\\begin{tabular}{c|c}
-    [t] & s\\\\[0pt]
-    [I] & A\\\\[0pt]
-    [m] & kg
-\\end{tabular}")
-
-(defconst org-latex-table-matrix-macros `(("bordermatrix" . "\\cr")
+(defconst org-latex-table-matrix-macros '(("bordermatrix" . "\\cr")
 					  ("qbordermatrix" . "\\cr")
-					  ("kbordermatrix" . ,org-latex-line-break-safe))
+					  ("kbordermatrix" . "\\\\"))
   "Alist between matrix macros and their row ending.")
 
 (defconst org-latex-math-environments-re
@@ -414,7 +401,8 @@ references."
   :group 'org-export-latex
   :type 'boolean
   :version "26.1"
-  :package-version '(Org . "8.3"))
+  :package-version '(Org . "8.3")
+  :safe #'booleanp)
 
 (defcustom org-latex-reference-command "\\ref{%s}"
   "Format string that takes a reference to produce a LaTeX reference command.
@@ -425,8 +413,7 @@ use of a package such as hyperref or cleveref and then change the format string
 to \"\\autoref{%s}\" or \"\\cref{%s}\" for example."
   :group 'org-export-latex
   :type 'string
-  :package-version '(Org . "9.5")
-  :safe #'stringp)
+  :package-version '(Org . "9.5"))
 
 ;;;; Preamble
 
@@ -620,8 +607,9 @@ which is replaced with the subtitle."
 
 (defcustom org-latex-toc-command "\\tableofcontents\n\n"
   "LaTeX command to set the table of contents, list of figures, etc.
-This command only applies to the table of contents generated with
-the toc:nil option, not to those generated with #+TOC keyword."
+This command only applies to the table of contents generated with the
+toc:t, toc:1, toc:2, toc:3, ... options, not to those generated with
+the #+TOC keyword."
   :group 'org-export-latex
   :type 'string)
 
@@ -745,8 +733,7 @@ or if the image is wrapped within a \"wrapfigure\" environment.
 Scale overrides width and height."
   :group 'org-export-latex
   :package-version '(Org . "9.3")
-  :type 'string
-  :safe #'stringp)
+  :type 'string)
 
 (defcustom org-latex-image-default-height ""
   "Default height for images.
@@ -763,8 +750,7 @@ environment."
   :group 'org-export-latex
   :type 'string
   :version "26.1"
-  :package-version '(Org . "9.0")
-  :safe #'stringp)
+  :package-version '(Org . "9.0"))
 
 (defcustom org-latex-inline-image-rules
   `(("file" . ,(rx "."
@@ -808,8 +794,7 @@ default we use here encompasses both."
   "Default environment used to `quote' blocks."
   :group 'org-export-latex
   :package-version '(Org . "9.5")
-  :type 'string
-  :safe #'stringp)
+  :type 'string)
 
 (defcustom org-latex-default-table-mode 'table
   "Default mode for tables.
@@ -998,7 +983,7 @@ The most comprehensive option can be set with,
 which causes source code to be run through
 `engrave-faces-latex-buffer', which generates colorings using
 Emacs' font-lock information.  This requires the Emacs package
-engrave-faces (available from ELPA), and the LaTeX package
+engrave-faces (available from GNU ELPA), and the LaTeX package
 fvextra be installed.
 
 The styling of the engraved result can be customized with
@@ -1299,9 +1284,10 @@ block-specific options, you may use the following syntax:
 
 (defcustom org-latex-engraved-theme nil
   "The theme that should be used for engraved code, when non-nil.
-This can be set to any theme defined in `engrave-faces-themes' or
-loadable by Emacs.  When set to t, the current Emacs theme is
-used.  When nil, no theme is applied."
+This can be set to any theme defined in `engrave-faces-themes'
+(from the engrave-faces package) or loadable by Emacs.  When set
+to t, the current Emacs theme is used.  When nil, no theme is
+applied."
   :group 'org-export-latex
   :package-version '(Org . "9.6")
   :type 'symbol)
@@ -1361,7 +1347,8 @@ default values of which are given by `org-latex-engraved-preamble' and
 \\floatname{listing}{\\listingsname}
 \\newcommand{\\listoflistingsname}{List of Listings}
 \\providecommand{\\listoflistings}{\\listof{listing}{\\listoflistingsname}}\n"
-              (if (memq 'src-block org-latex-caption-above)
+              (if (org-latex--caption-above-p
+                   (org-element-create 'src-block) info)
                   "plaintop" "plain"))
              t t
              engraved-preamble)))
@@ -1524,6 +1511,8 @@ logfiles to remove, set `org-latex-logfiles-extensions'."
     ("Underfull \\hbox" . "[underfull hbox]")
     ("Overfull \\hbox" . "[overfull hbox]")
     ("Citation.*?undefined" . "[undefined citation]")
+    ("^!.+Unicode character" . "[unicode character(s) not set up for use with pdflatex. You can run lualatex or xelatex instead]")
+    ("Missing character: There is no" . "[Missing character(s): please load an appropriate font with the fontspec package]")
     ("Undefined control sequence" . "[undefined control sequence]"))
   "Alist of regular expressions and associated messages for the user.
 The regular expressions are used to find possible warnings in the
@@ -1561,12 +1550,11 @@ this case always return a unique label.
 Eventually, if FULL is non-nil, wrap label within \"\\label{}\"."
   (let* ((type (org-element-type datum))
 	 (user-label
-	  (org-element-property
-	   (cl-case type
-	     ((headline inlinetask) :CUSTOM_ID)
-	     (target :value)
-	     (otherwise :name))
-	   datum))
+          (cl-case type
+	    ((headline inlinetask) (org-element-property :CUSTOM_ID datum))
+	    (target (org-element-property :value datum))
+	    (otherwise (or (org-element-property :name datum)
+                           (car (org-element-property :results datum))))))
 	 (label
 	  (and (or user-label force)
 	       (if (and user-label (plist-get info :latex-prefer-user-labels))
@@ -1668,7 +1656,7 @@ explicitly been loaded.  Then it is added to the rest of
 package's options.
 
 The optional argument to Babel or the mandatory argument to
-`\babelprovide' command may be \"AUTO\" which is then replaced
+`\\babelprovide' command may be \"AUTO\" which is then replaced
 with the language of the document or
 `org-export-default-language' unless language in question is
 already loaded.
@@ -1827,11 +1815,11 @@ nil."
 INFO is the current export state, as a plist.  This function
 should not be used for floats.  See
 `org-latex--caption/label-string'."
-  (if (not (and (org-string-nw-p output) (org-element-property :name element)))
-      output
-    (concat (format "\\phantomsection\n\\label{%s}\n"
-		    (org-latex--label element info))
-	    output)))
+  (let ((label (org-latex--label element info)))
+    (if (not (and (org-string-nw-p output) label))
+        output
+      (concat (format "\\phantomsection\n\\label{%s}\n" label)
+	      output))))
 
 (defun org-latex--protect-text (text)
   "Protect special characters in string TEXT and return it."
@@ -2122,7 +2110,7 @@ information."
 	   (concat (org-timestamp-translate (org-element-property :value clock))
 		   (let ((time (org-element-property :duration clock)))
 		     (and time (format " (%s)" time)))))
-   org-latex-line-break-safe))
+   "\\\\"))
 
 
 ;;;; Code
@@ -2310,9 +2298,22 @@ holding contextual information."
                ;; with \texttt.
                (code . (lambda (o _ _) (org-latex--protect-texttt (org-element-property :value o))))
                (verbatim . (lambda (o _ _) (org-latex--protect-texttt (org-element-property :value o)))))))
+           ;; Create a temporary export backend that strips footnotes from title.
+           ;; Footnotes are not allowed in \section and similar
+           ;; commands that contribute to TOC and footers.
+           ;; See https://orgmode.org/list/691643eb-49d0-45c3-ab7f-a1edbd093bef@gmail.com
+           ;; https://texfaq.org/FAQ-ftnsect
+           (section-no-footnote-backend
+            (org-export-create-backend
+             :parent section-backend
+             :transcoders
+             `((footnote-reference . ignore))))
 	   (text
 	    (org-export-data-with-backend
 	     (org-element-property :title headline) section-backend info))
+           (text-no-footnote
+            (org-export-data-with-backend
+	     (org-element-property :title headline) section-no-footnote-backend info))
 	   (todo
 	    (and (plist-get info :with-todo-keywords)
 		 (let ((todo (org-element-property :todo-keyword headline)))
@@ -2326,6 +2327,9 @@ holding contextual information."
 	   ;; The latter is required to remove tags from toc.
 	   (full-text (funcall (plist-get info :latex-format-headline-function)
 			       todo todo-type priority text tags info))
+           (full-text-no-footnote
+            (funcall (plist-get info :latex-format-headline-function)
+		     todo todo-type priority text-no-footnote tags info))
 	   ;; Associate \label to the headline for internal links.
 	   (headline-label (org-latex--label headline info t t))
 	   (pre-blanks
@@ -2383,10 +2387,14 @@ holding contextual information."
 				  (string-match-p "\\<local\\>" v)
 				  (format "\\stopcontents[level-%d]" level)))))
 		    info t)))))
-	  (if (and opt-title
-		   (not (equal opt-title full-text))
+	  (if (and (or (and opt-title (not (equal opt-title full-text)))
+                       ;; Heading contains footnotes.  Add optional title
+                       ;; version without footnotes to avoid footnotes in
+                       ;; TOC/footers.
+                       (and (not (equal full-text-no-footnote full-text))
+                            (setq opt-title full-text-no-footnote)))
 		   (string-match "\\`\\\\\\(.+?\\){" section-fmt))
-	      (format (replace-match "\\1[%s]" nil nil section-fmt 1)
+              (format (replace-match "\\1[%s]" nil nil section-fmt 1)
 		      ;; Replace square brackets with parenthesis
 		      ;; since square brackets are not supported in
 		      ;; optional arguments.
@@ -2443,7 +2451,7 @@ contextual information."
   (let ((code (org-element-property :value inline-src-block))
         (lang (org-element-property :language inline-src-block)))
     (pcase (plist-get info :latex-src-block-backend)
-      (`verbatim (org-latex--text-markup code 'code info))
+      ((or `verbatim (guard (not lang))) (org-latex--text-markup code 'code info))
       (`minted (org-latex-inline-src-block--minted info code lang))
       (`engraved (org-latex-inline-src-block--engraved info code lang))
       (`listings (org-latex-inline-src-block--listings info code lang))
@@ -2682,9 +2690,10 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
 			(org-latex--label latex-environment info nil t)
 		      (org-latex--caption/label-string latex-environment info)))
 	   (caption-above-p
-	    (memq type (append (plist-get info :latex-caption-above) '(math)))))
+            (or (eq type 'math)
+                (org-latex--caption-above-p latex-environment info))))
       (if (not (or (org-element-property :name latex-environment)
-		   (org-element-property :caption latex-environment)))
+		 (org-element-property :caption latex-environment)))
 	  value
 	;; Environment is labeled: label must be within the environment
 	;; (otherwise, a reference pointing to that element will count
@@ -2719,7 +2728,7 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
 (defun org-latex-line-break (_line-break _contents _info)
   "Transcode a LINE-BREAK object from Org to LaTeX.
 CONTENTS is nil.  INFO is a plist holding contextual information."
-  (concat org-latex-line-break-safe "\n"))
+  "\\\\\n")
 
 
 ;;;; Link
@@ -2741,16 +2750,33 @@ used as a communication channel."
 	 ;; Retrieve latex attributes from the element around.
 	 (attr (org-export-read-attribute :attr_latex parent))
 	 (float (let ((float (plist-get attr :float)))
-		  (cond ((string= float "wrap") 'wrap)
-			((string= float "sideways") 'sideways)
-			((string= float "multicolumn") 'multicolumn)
-                        ((string= float "t") 'figure)
-			((and (plist-member attr :float) (not float)) 'nonfloat)
-                        (float float)
-			((or (org-element-property :caption parent)
-			     (org-string-nw-p (plist-get attr :caption)))
-			 'figure)
-			(t 'nonfloat))))
+		  (cond
+                   ((org-element-map (org-element-contents parent) t
+                      (lambda (node)
+                        (cond
+                         ((and (org-element-type-p node 'plain-text)
+                               (not (org-string-nw-p node)))
+                          nil)
+                         ((eq link node)
+                          ;; Objects inside link description are
+                          ;; allowed.
+                          (throw :org-element-skip nil))
+                         (t 'not-a-float)))
+                      info 'first-match)
+                    ;; Not a single link inside paragraph (spaces
+                    ;; ignored).  Cannot use float environment.  It
+                    ;; would be inside paragraph.
+                    nil)
+                   ((string= float "wrap") 'wrap)
+		   ((string= float "sideways") 'sideways)
+		   ((string= float "multicolumn") 'multicolumn)
+                   ((string= float "t") 'figure)
+		   ((and (plist-member attr :float) (not float)) 'nonfloat)
+                   (float float)
+		   ((or (org-element-property :caption parent)
+			(org-string-nw-p (plist-get attr :caption)))
+		    'figure)
+		   (t 'nonfloat))))
 	 (placement
 	  (let ((place (plist-get attr :placement)))
 	    (cond
@@ -2917,12 +2943,10 @@ INFO is a plist holding contextual information.  See
 		  link (plist-get info :latex-inline-image-rules)))
 	 (path (org-latex--protect-text
 		(pcase type
-		  ((or "http" "https" "ftp" "mailto" "doi")
-		   (concat type ":" raw-path))
 		  ("file"
 		   (org-export-file-uri raw-path))
 		  (_
-		   raw-path)))))
+		   (concat type ":" raw-path))))))
     (cond
      ;; Link type is handled by a special function.
      ((org-export-custom-protocol-maybe link desc 'latex info))
@@ -3072,9 +3096,16 @@ contextual information."
     ;; Handle break preservation if required.
     (when (plist-get info :preserve-breaks)
       (setq output (replace-regexp-in-string
-		    "\\(?:[ \t]*\\\\\\\\\\)?[ \t]*\n"
-                    (concat org-latex-line-break-safe "\n")
-                    output nil t)))
+		    "\\(?:[ \t]*\\\\\\\\\\)?[ \t]*\n" "\\\\\n" output nil t)))
+    ;; Protect [foo] at the beginning of lines / beginning of the
+    ;; plain-text object.  This prevents LaTeX from unexpectedly
+    ;; interpreting @@latex:\pagebreak@@ [foo] as a command with
+    ;; optional argument.
+    (setq output (replace-regexp-in-string
+                  (rx bol (0+ space) (group "["))
+                  "{[}"
+                  output
+                  nil nil 1))
     ;; Return value.
     output))
 
@@ -3110,7 +3141,7 @@ information."
 		(format (plist-get info :latex-active-timestamp-format)
 			(org-timestamp-translate scheduled)))))))
     " ")
-   org-latex-line-break-safe))
+   "\\\\"))
 
 
 ;;;; Property Drawer
@@ -3716,7 +3747,7 @@ CONTENTS is the contents of the object."
 ;; takes care of tables with a "verbatim" mode.  Otherwise, it
 ;; delegates the job to either `org-latex--table.el-table',
 ;; `org-latex--org-table', `org-latex--math-table' or
-;; `org-latex--org-tabbing' functions,
+;; `org-latex--org-align-string-tabbing' functions,
 ;; depending of the type of the table and the mode requested.
 ;;
 ;; `org-latex--align-string' is a subroutine used to build alignment
@@ -3890,11 +3921,11 @@ This function assumes TABLE has `org' as its `:type' property and
 		(format "\\begin{%s}%s{%s}\n" table-env width alignment)
 		(and above?
 		     (org-string-nw-p caption)
-		     (concat caption org-latex-line-break-safe "\n"))
+		     (concat caption "\\\\\n"))
 		contents
 		(and (not above?)
 		     (org-string-nw-p caption)
-		     (concat caption org-latex-line-break-safe "\n"))
+		     (concat caption "\\\\\n"))
 		(format "\\end{%s}" table-env)
 		(and fontsize "}"))))
      (t
@@ -3979,7 +4010,7 @@ This function assumes TABLE has `org' as its `:type' property and
 		 (lambda (cell)
 		   (substring (org-element-interpret-data cell) 0 -1))
 		 (org-element-map row 'table-cell #'identity info) "&")
-		(or (cdr (assoc env org-latex-table-matrix-macros)) org-latex-line-break-safe)
+		(or (cdr (assoc env org-latex-table-matrix-macros)) "\\\\")
 		"\n")))
 	   (org-element-map table 'table-row #'identity info) "")))
     (concat
@@ -4046,12 +4077,24 @@ a communication channel."
 		(org-export-get-previous-element table-row info) info))
 	  "")
 	 (t "\\midrule"))
+      ;; Memorize table header in case it is multiline. We need this
+      ;; information to define contents before "\\endhead" in longtable environments.
+      (when (org-export-table-row-in-header-p table-row info)
+        (let ((table-head-cache (plist-get info :org-latex-table-head-cache)))
+          (unless (hash-table-p table-head-cache)
+            (setq table-head-cache (make-hash-table :test #'eq))
+            (plist-put info :org-latex-table-head-cache table-head-cache))
+          (if-let ((head-contents (gethash (org-element-parent table-row) table-head-cache)))
+              (puthash (org-element-parent table-row) (concat head-contents "\\\\\n" contents)
+                       table-head-cache)
+            (puthash (org-element-parent table-row) contents table-head-cache))))
+      ;; Return LaTeX string as the transcoder.
       (concat
        ;; When BOOKTABS are activated enforce top-rule even when no
        ;; hline was specifically marked.
        (and booktabsp (not (org-export-get-previous-element table-row info))
 	    "\\toprule\n")
-       contents org-latex-line-break-safe "\n"
+       contents "\\\\\n"
        (cond
 	;; Special case for long tables.  Define header and footers.
 	((and longtablep (org-export-table-row-ends-header-p table-row info))
@@ -4059,9 +4102,9 @@ a communication channel."
 			      (org-element-lineage table-row 'table) info))))
 	   (format "%s
 \\endfirsthead
-\\multicolumn{%d}{l}{%s} \\\\[0pt]
+\\multicolumn{%d}{l}{%s} \\\\
 %s
-%s \\\\[0pt]\n
+%s \\\\\n
 %s
 \\endhead
 %s\\multicolumn{%d}{r}{%s} \\\\
@@ -4075,7 +4118,7 @@ a communication channel."
 		     "")
 		    (booktabsp "\\toprule\n")
 		    (t "\\hline\n"))
-		   contents
+		   (gethash (org-element-parent table-row) (plist-get info :org-latex-table-head-cache))
 		   (if booktabsp "\\midrule" "\\hline")
 		   (if booktabsp "\\midrule" "\\hline")
 		   columns
@@ -4170,15 +4213,15 @@ contextual information."
 	       (replace-regexp-in-string
                 (if (not lit)
 		    (rx-to-string
-                     `(seq (group ,org-latex-line-break-safe "\n")
-		           (1+ (group line-start (0+ space) ,org-latex-line-break-safe "\n"))))
-		  (concat "^[ \t]*" (regexp-quote org-latex-line-break-safe) "$"))
+                     `(seq (group "\\\\\n")
+		           (1+ (group line-start (0+ space) "\\\\\n"))))
+		  "^[ \t]*\\\\$")
 	        (if (not lit)
 		    (if lin "\\\\!\n\n" "\n\n")
 		  "\\vspace*{\\baselineskip}")
 	        (replace-regexp-in-string
 	         "\\([ \t]*\\\\\\\\\\)?[ \t]*\n"
-                 (concat org-latex-line-break-safe "\n")
+                 "\\\\\n"
 	         (if (not lit)
 		     (concat (org-trim contents t) "\n")
 		   contents)
@@ -4377,11 +4420,17 @@ log files (as specified by `org-latex-logfiles-extensions') are deleted."
                      (regexp-opt org-latex-logfiles-extensions))
              t)))
     (let ((warnings (org-latex--collect-warnings log-buf)))
-      (message (concat "PDF file produced"
-                       (cond
-                        ((eq warnings 'error) " with errors.")
-                        (warnings (concat " with warnings: " warnings))
-                        (t ".")))))))
+      (funcall
+       (if warnings
+           (apply-partially
+            #'display-warning
+            '(ox-latex))
+         #'message)
+       (concat "PDF file produced"
+               (cond
+                ((eq warnings 'error) " with errors.")
+                (warnings (concat " with warnings: " warnings))
+                (t ".")))))))
 
 (defun org-latex--collect-warnings (buffer)
   "Collect some warnings from \"pdflatex\" command output.
@@ -4392,7 +4441,11 @@ encountered or nil if there was none."
     (save-excursion
       (goto-char (point-max))
       (when (re-search-backward "^[ \t]*This is .*?TeX.*?Version" nil t)
-	(if (re-search-forward "^!" nil t) 'error
+	(if (and
+	     (re-search-forward "^!\\(.+\\)" nil t)
+             ;; This error is passed as missing character warning
+             (not (string-match-p "Unicode character" (match-string 1))))
+            'error
 	  (let ((case-fold-search t)
 		(warnings ""))
 	    (dolist (warning org-latex-known-warnings)

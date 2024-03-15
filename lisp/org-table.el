@@ -1,6 +1,6 @@
 ;;; org-table.el --- The Table Editor for Org        -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -467,16 +467,17 @@ prevents it from hanging Emacs."
 This may be useful when columns have been shrunk."
   (save-excursion
     (when pos (goto-char pos))
-    (goto-char (line-beginning-position))
-    (let ((end (line-end-position)) str)
-      (goto-char (1- pos))
-      (while (progn (forward-char 1) (< (point) end))
-	(let ((ov (car (overlays-at (point)))))
-	  (if (not ov)
-	      (push (char-to-string (char-after)) str)
-	    (push (overlay-get ov 'display) str)
-	    (goto-char (1- (overlay-end ov))))))
-      (format "|%s" (mapconcat #'identity (reverse str) "")))))
+    (let* ((beg (line-beginning-position))
+           (end (line-end-position))
+           (str (buffer-substring beg end)))
+      ;; FIXME: This does not handle intersecting overlays.
+      (dolist (ov (overlays-in beg end))
+        (when (overlay-get ov 'display)
+          (put-text-property
+           (- (overlay-start ov) beg) (- (overlay-end ov) beg)
+           'display (overlay-get ov 'display)
+           str)))
+      str)))
 
 (defvar-local org-table-header-overlay nil)
 (put 'org-table-header-overlay 'permanent-local t)
@@ -487,19 +488,24 @@ This may be useful when columns have been shrunk."
         (progn
           (when (overlayp org-table-header-overlay)
             (delete-overlay org-table-header-overlay))
+          ;; We might be called after scrolling but before display is
+          ;; updated. Make sure that any queued redisplay is executed
+          ;; before we look into `window-start'.
+          (redisplay)
           (let* ((ws (window-start))
                  (beg (save-excursion
                         (goto-char (org-table-begin))
                         (while (or (org-at-table-hline-p)
                                    (looking-at-p ".*|\\s-+<[rcl]?\\([0-9]+\\)?>"))
                           (move-beginning-of-line 2))
-                        (line-beginning-position)))
-                 (end (save-excursion (goto-char beg) (line-end-position))))
+                        (line-beginning-position))))
             (if (pos-visible-in-window-p beg)
                 (when (overlayp org-table-header-overlay)
                   (delete-overlay org-table-header-overlay))
               (setq org-table-header-overlay
-                    (make-overlay ws (+ ws (- end beg))))
+                    (make-overlay
+                     (save-excursion (goto-char ws) (line-beginning-position))
+                     (save-excursion (goto-char ws) (line-end-position))))
               (org-overlay-display
                org-table-header-overlay
                (org-table-row-get-visible-string beg)
@@ -1136,7 +1142,8 @@ With numeric argument N, move N-1 fields forward first."
 ;;;###autoload
 (defun org-table-next-row ()
   "Go to the next row (same column) in the current table.
-Before doing so, re-align the table if necessary."
+When next row is an hline or outside the table, create a new empty
+row.  Before doing so, re-align the table if necessary."
   (interactive)
   (org-table-maybe-eval-formula)
   (org-table-maybe-recalculate-line)
@@ -1232,7 +1239,7 @@ Return t when the line exists, nil if it does not exist."
     (if (looking-at "|[^|\n]+")
 	(let* ((pos (match-beginning 0))
 	       (match (match-string 0))
-	       (len (save-match-data (org-string-width match))))
+	       (len (save-match-data (org-string-width match nil 'org-table))))
 	  (replace-match (concat "|" (make-string (1- len) ?\ )))
 	  (goto-char (+ 2 pos))
 	  (substring match 1)))))
@@ -1731,7 +1738,7 @@ In particular, this does handle wide and invisible characters."
 	       (concat "|"
                        (make-string
                         (save-match-data
-                          (org-string-width (match-string 1 s)))
+                          (org-string-width (match-string 1 s) nil 'org-table))
 			?\ )
                        "|")
 	       t t s)))
@@ -1924,8 +1931,8 @@ However, when N is 0, do not increment the field at all."
       (let ((org-table-may-need-update nil)) (org-table-next-row))
       (org-table-blank-field))
     ;; Insert the new field.  NEW-FIELD may be nil if
-    ;; `org-table-increment' is nil, or N = 0.  In that case, copy
-    ;; FIELD.
+    ;; `org-table-copy-increment' is nil, or N = 0.  In that case,
+    ;; copy FIELD.
     (insert (or next-field field))
     (org-table-maybe-recalculate-line)
     (org-table-align)))
@@ -2051,7 +2058,7 @@ toggle `org-table-follow-field-mode'."
 	  (cw (current-window-configuration))
 	  p)
       (goto-char pos)
-      (org-switch-to-buffer-other-window "*Org Table Edit Field*")
+      (switch-to-buffer-other-window "*Org Table Edit Field*")
       (when (and (local-variable-p 'org-field-marker)
 		 (markerp org-field-marker))
 	(move-marker org-field-marker nil))
@@ -3362,7 +3369,7 @@ Parameters get priority."
 	  (titles '((column . "# Column Formulas\n")
 		    (field . "# Field and Range Formulas\n")
 		    (named . "# Named Field Formulas\n"))))
-      (org-switch-to-buffer-other-window "*Edit Formulas*")
+      (switch-to-buffer-other-window "*Edit Formulas*")
       (erase-buffer)
       ;; Keep global-font-lock-mode from turning on font-lock-mode
       (let ((font-lock-global-modes '(not fundamental-mode)))
@@ -3996,7 +4003,7 @@ already hidden."
 	   start end (make-string (1+ width) ?-) "")))
    ((equal contents "")			;no contents to hide
     (list
-     (let ((w (org-string-width (buffer-substring start end)))
+     (let ((w (org-string-width (buffer-substring start end) nil 'org-table))
 	   ;; We really want WIDTH + 2 whitespace, to include blanks
 	   ;; around fields.
 	   (full (+ 2 width)))
@@ -4015,7 +4022,8 @@ already hidden."
     (let* ((lead (org-with-point-at start (skip-chars-forward " ")))
 	   (trail (org-with-point-at end (abs (skip-chars-backward " "))))
 	   (contents-width (org-string-width
-			    (buffer-substring (+ start lead) (- end trail)))))
+			    (buffer-substring (+ start lead) (- end trail))
+                            nil 'org-table)))
       (cond
        ;; Contents are too large to fit in WIDTH character.  Limit, if
        ;; possible, blanks at the beginning of the field to a single
@@ -4040,7 +4048,7 @@ already hidden."
 		      (let ((mean (+ (ash lower -1)
 				     (ash upper -1)
 				     (logand lower upper 1))))
-			(pcase (org-string-width (buffer-substring begin mean))
+			(pcase (org-string-width (buffer-substring begin mean) nil 'org-table)
 			  ((pred (= width)) (throw :exit mean))
 			  ((pred (< width)) (setq upper mean))
 			  (_ (setq lower mean)))))
@@ -4091,8 +4099,8 @@ already hidden."
   "Read column selection select as a list of numbers.
 
 SELECT is a string containing column ranges, separated by white
-space characters, see `org-table-hide-column' for details.  MAX
-is the maximum column number.
+space characters, see `org-table-toggle-column-width' for details.
+MAX is the maximum column number.
 
 Return value is a sorted list of numbers.  Ignore any number
 outside of the [1;MAX] range."
@@ -4351,7 +4359,7 @@ extension of the given file name, and finally on the variable
   "Format FIELD according to column WIDTH and alignment ALIGN.
 FIELD is a string.  WIDTH is a number.  ALIGN is either \"c\",
 \"l\" or\"r\"."
-  (let* ((spaces (- width (org-string-width field)))
+  (let* ((spaces (- width (org-string-width field nil 'org-table)))
 	 (prefix (pcase align
 		   ("l" "")
 		   ("r" (make-string spaces ?\s))
@@ -4400,7 +4408,7 @@ FIELD is a string.  WIDTH is a number.  ALIGN is either \"c\",
 		  (non-empty 0))
 	      (dolist (row rows)
 		(let ((cell (or (nth i row) "")))
-		  (setq max-width (max max-width (org-string-width cell)))
+		  (setq max-width (max max-width (org-string-width cell nil 'org-table)))
 		  (cond (fixed-align? nil)
 			((equal cell "") nil)
 			((string-match "\\`<\\([lrc]\\)[0-9]*>\\'" cell)
@@ -4467,46 +4475,48 @@ Optional argument NEW may specify text to replace the current field content."
   (cond
    ((and (not new) org-table-may-need-update)) ; Realignment will happen anyway
    ((org-at-table-hline-p))
-   ((and (not new)
-	 (or (not (eq (marker-buffer org-table-aligned-begin-marker)
-		      (current-buffer)))
-	     (< (point) org-table-aligned-begin-marker)
-	     (>= (point) org-table-aligned-end-marker)))
-    ;; This is not the same table, force a full re-align.
-    (setq org-table-may-need-update t))
    (t
-    ;; Realign the current field, based on previous full realign.
-    (let ((pos (point))
-	  (col (org-table-current-column)))
-      (when (> col 0)
-	(skip-chars-backward "^|")
-	(if (not (looking-at " *\\(?:\\([^|\n]*?\\) *\\(|\\)\\|\\([^|\n]+?\\) *\\($\\)\\)"))
-	    (setq org-table-may-need-update t)
-	  (let* ((align (nth (1- col) org-table-last-alignment))
-		 (width (nth (1- col) org-table-last-column-widths))
-		 (cell (match-string 0))
-		 (field (match-string 1))
-		 (properly-closed? (/= (match-beginning 2) (match-end 2)))
-		 (new-cell
-		  (save-match-data
-		    (cond (org-table-may-need-update
-			   (format " %s |" (or new field)))
-			  ((not properly-closed?)
-			   (setq org-table-may-need-update t)
-			   (format " %s |" (or new field)))
-			  ((not new)
-			   (concat (org-table--align-field field width align)
-				   "|"))
-			  ((and width (<= (org-string-width new) width))
-			   (concat (org-table--align-field new width align)
-				   "|"))
-			  (t
-			   (setq org-table-may-need-update t)
-			   (format " %s |" new))))))
-	    (unless (equal new-cell cell)
-	      (let (org-table-may-need-update)
-		(replace-match new-cell t t)))
-	    (goto-char pos))))))))
+    (when (or (not (eq (marker-buffer org-table-aligned-begin-marker)
+		     (current-buffer)))
+	      (< (point) org-table-aligned-begin-marker)
+	      (>= (point) org-table-aligned-end-marker))
+      ;; This is not the same table, force a full re-align.
+      (setq org-table-may-need-update t
+            org-table-last-alignment nil
+            org-table-last-column-widths nil))
+    (when new
+      ;; Realign the current field, based on previous full realign.
+      (let ((pos (point))
+	    (col (org-table-current-column)))
+        (when (> col 0)
+	  (skip-chars-backward "^|")
+	  (if (not (looking-at " *\\(?:\\([^|\n]*?\\) *\\(|\\)\\|\\([^|\n]+?\\) *\\($\\)\\)"))
+	      (setq org-table-may-need-update t)
+	    (let* ((align (nth (1- col) org-table-last-alignment))
+		   (width (nth (1- col) org-table-last-column-widths))
+		   (cell (match-string 0))
+		   (field (match-string 1))
+		   (properly-closed? (/= (match-beginning 2) (match-end 2)))
+		   (new-cell
+		    (save-match-data
+		      (cond (org-table-may-need-update
+			     (format " %s |" (or new field)))
+			    ((not properly-closed?)
+			     (setq org-table-may-need-update t)
+			     (format " %s |" (or new field)))
+			    ((not new)
+			     (concat (org-table--align-field field width align)
+				     "|"))
+			    ((and width (<= (org-string-width new nil 'org-table) width))
+			     (concat (org-table--align-field new width align)
+				     "|"))
+			    (t
+			     (setq org-table-may-need-update t)
+			     (format " %s |" new))))))
+	      (unless (equal new-cell cell)
+	        (let (org-table-may-need-update)
+		  (replace-match new-cell t t)))
+	      (goto-char pos)))))))))
 
 ;;;###autoload
 (defun org-table-sort-lines
@@ -4991,8 +5001,8 @@ When LOCAL is non-nil, show references for the table at point."
       (if (and (markerp pos) (marker-buffer pos))
 	  (if (get-buffer-window (marker-buffer pos))
 	      (select-window (get-buffer-window (marker-buffer pos)))
-	    (org-switch-to-buffer-other-window (get-buffer-window
-						(marker-buffer pos)))))
+	    (switch-to-buffer-other-window (get-buffer-window
+					    (marker-buffer pos)))))
       (goto-char pos)
       (org-table--force-dataline)
       (let ((table-start
@@ -5485,25 +5495,38 @@ for a horizontal separator line, or a list of field values as strings.
 The table is taken from the parameter TXT, or from the buffer at point."
   (if txt
       (with-temp-buffer
+	(buffer-disable-undo)
         (insert txt)
         (goto-char (point-min))
         (org-table-to-lisp))
     (save-excursion
       (goto-char (org-table-begin))
-      (let ((table nil))
-        (while (re-search-forward "\\=[ \t]*|" nil t)
-	  (let ((row nil))
-	    (if (looking-at "-")
-		(push 'hline table)
-	      (while (not (progn (skip-chars-forward " \t") (eolp)))
-		(push (buffer-substring
-		       (point)
-		       (progn (re-search-forward "[ \t]*\\(|\\|$\\)")
-			      (match-beginning 0)))
-		      row))
-	      (push (nreverse row) table)))
+      (let (table)
+        (while (progn (skip-chars-forward " \t")
+                      (eq (following-char) ?|))
+	  (forward-char)
+	  (push
+	   (if (eq (following-char) ?-)
+	       'hline
+	     (let (row)
+	       (while (progn
+                        (skip-chars-forward " \t")
+                        (not (eolp)))
+                 (let ((q (point)))
+                   (skip-chars-forward "^|\n")
+                   (goto-char
+                    (prog1
+                        (let ((p (point)))
+                          (unless (eolp) (setq p (1+ p)))
+                          p)
+	              (skip-chars-backward " \t" q)
+                      ;; Preserve text properties.  They are used when
+                      ;; calculating cell width.
+	              (push (buffer-substring q (point)) row)))))
+	       (nreverse row)))
+	   table)
 	  (forward-line))
-        (nreverse table)))))
+	(nreverse table)))))
 
 (defun org-table-collapse-header (table &optional separator max-header-lines)
   "Collapse the lines before `hline' into a single header.

@@ -1,6 +1,6 @@
 ;;; org-clock.el --- The time clocking code for Org mode -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -600,7 +600,12 @@ cannot be translated."
      ["Switch task" (lambda () (interactive) (org-clock-in '(4))) :active t :keys "C-u C-c C-x C-i"])))
 
 (defun org-clock-history-push (&optional pos buffer)
-  "Push a marker to the clock history."
+  "Push point marker to the clock history.
+When POS is provided, use it as marker point.
+When BUFFER and POS are provided, use marker at POS in base buffer of
+BUFFER."
+  ;; When buffer is provided, POS must be provided.
+  (cl-assert (or (not buffer) pos))
   (setq org-clock-history-length (max 1 org-clock-history-length))
   (let ((m (move-marker (make-marker)
 			(or pos (point)) (org-base-buffer
@@ -620,7 +625,10 @@ cannot be translated."
     (push m org-clock-history)))
 
 (defun org-clock-save-markers-for-cut-and-paste (beg end)
-  "Save relative positions of markers in region."
+  "Save relative positions of markers in region BEG..END.
+Save `org-clock-marker', `org-clock-hd-marker',
+`org-clock-default-task', `org-clock-interrupted-task', and the
+markers in `org-clock-history'."
   (org-check-and-save-marker org-clock-marker beg end)
   (org-check-and-save-marker org-clock-hd-marker beg end)
   (org-check-and-save-marker org-clock-default-task beg end)
@@ -646,6 +654,7 @@ cannot be translated."
 
 (defun org-clock-select-task (&optional prompt)
   "Select a task that was recently associated with clocking.
+PROMPT is the prompt text to be used, as a string.
 Return marker position of the selected task.  Raise an error if
 there is no recent clock to choose from."
   (let (och chl sel-list rpl (i 0) s)
@@ -656,7 +665,7 @@ there is no recent clock to choose from."
     (if (zerop chl)
 	(user-error "No recent clock")
       (save-window-excursion
-	(org-switch-to-buffer-other-window
+	(switch-to-buffer-other-window
 	 (get-buffer-create "*Clock Task Select*"))
 	(erase-buffer)
 	(when (marker-buffer org-clock-default-task)
@@ -1493,6 +1502,33 @@ the default behavior."
 	 (message "Clock starts at %s - %s" ts org--msg-extra)
 	 (run-hooks 'org-clock-in-hook))))))
 
+(defvar org-clock--auto-clockout-timer-obj nil
+  "Timer object holding the existing clockout timer.")
+(defun org-clock--auto-clockout-maybe ()
+  "Clock out the currently clocked in task when idle.
+See `org-clock-auto-clockout-timer' to set the idle time span.
+
+This function is to be called by a timer."
+  (when (and (numberp org-clock-auto-clockout-timer)
+	     org-clock-current-task)
+    (let ((user-idle-seconds (org-user-idle-seconds)))
+      (cond
+       ;; Already idle.  Clock out.
+       ((>= user-idle-seconds org-clock-auto-clockout-timer)
+        (setq org-clock--auto-clockout-timer-obj nil)
+        (org-clock-out))
+       ;; Emacs is idle but system is not.  Retry assuming that system will remain idle.
+       ((>= (org-emacs-idle-seconds) org-clock-auto-clockout-timer)
+        (setq org-clock--auto-clockout-timer-obj
+              (run-with-timer
+               (- org-clock-auto-clockout-timer user-idle-seconds)
+               nil #'org-clock--auto-clockout-maybe)))
+       ;; Emacs is not idle.  Check again next time we are idle.
+       (t
+        (setq org-clock--auto-clockout-timer-obj
+              (run-with-idle-timer
+               org-clock-auto-clockout-timer nil #'org-clock--auto-clockout-maybe)))))))
+
 (defun org-clock-auto-clockout ()
   "Clock out the currently clocked in task if Emacs is idle.
 See `org-clock-auto-clockout-timer' to set the idle time span.
@@ -1500,9 +1536,11 @@ See `org-clock-auto-clockout-timer' to set the idle time span.
 This is only effective when `org-clock-auto-clockout-insinuate'
 is present in the user configuration."
   (when (and (numberp org-clock-auto-clockout-timer)
-	     org-clock-current-task)
-    (run-with-idle-timer
-     org-clock-auto-clockout-timer nil #'org-clock-out)))
+	     org-clock-current-task
+             (not (timerp org-clock--auto-clockout-timer-obj)))
+    (setq org-clock--auto-clockout-timer-obj
+          (run-with-idle-timer
+           org-clock-auto-clockout-timer nil #'org-clock--auto-clockout-maybe))))
 
 ;;;###autoload
 (defun org-clock-toggle-auto-clockout ()

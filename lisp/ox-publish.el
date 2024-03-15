@@ -1,8 +1,7 @@
 ;;; ox-publish.el --- Publish Related Org Mode Files as a Website -*- lexical-binding: t; -*-
-;; Copyright (C) 2006-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2024 Free Software Foundation, Inc.
 
 ;; Author: David O'Toole <dto@gnu.org>
-;; Maintainer: Nicolas Goaziou <mail@nicolasgoaziou.fr>
 ;; Keywords: hypermedia, outlines, wp
 
 ;; This file is part of GNU Emacs.

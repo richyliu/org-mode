@@ -1,6 +1,6 @@
 ;;; org-capture.el --- Fast note taking in Org       -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2010-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -501,12 +501,6 @@ The capture buffer is current and still narrowed."
   :version "24.1"
   :type 'hook)
 
-(defcustom org-capture-bookmark t
-  "When non-nil, add bookmark pointing at the last stored position when capturing."
-  :group 'org-capture
-  :version "24.3"
-  :type 'boolean)
-
 ;;; The property list for keeping information about the capture process
 
 (defvar org-capture-plist nil
@@ -1006,7 +1000,7 @@ Store them in the capture property list."
 	 (org-capture-put-target-region-and-position)
 	 (widen)
 	 (setq target-entry-p nil))
-	(`(id ,id)
+	(`(id ,(and id (or (pred stringp) (pred symbolp))))
 	 (pcase (org-id-find id)
 	   (`(,path . ,position)
 	    (set-buffer (org-capture-target-buffer path))
@@ -1014,7 +1008,7 @@ Store them in the capture property list."
 	    (org-capture-put-target-region-and-position)
 	    (goto-char position))
 	   (_ (error "Cannot find target ID \"%s\"" id))))
-	(`(file+headline ,path ,headline)
+	(`(file+headline ,path ,(and headline (pred stringp)))
 	 (set-buffer (org-capture-target-buffer path))
 	 ;; Org expects the target file to be in Org mode, otherwise
 	 ;; it throws an error.  However, the default notes files
@@ -1036,7 +1030,7 @@ Store them in the capture property list."
 	   (unless (bolp) (insert "\n"))
 	   (insert "* " headline "\n")
 	   (forward-line -1)))
-	(`(file+olp ,path . ,outline-path)
+	(`(file+olp ,path . ,(and outline-path (guard outline-path)))
 	 (let ((m (org-find-olp (cons (org-capture-expand-file path)
 				      outline-path))))
 	   (set-buffer (marker-buffer m))
@@ -1044,7 +1038,7 @@ Store them in the capture property list."
 	   (widen)
 	   (goto-char m)
 	   (set-marker m nil)))
-	(`(file+regexp ,path ,regexp)
+	(`(file+regexp ,path ,(and regexp (pred stringp)))
 	 (set-buffer (org-capture-target-buffer path))
 	 (org-capture-put-target-region-and-position)
 	 (widen)
@@ -1112,7 +1106,7 @@ Store them in the capture property list."
 	    ;; the following is the keep-restriction argument for
 	    ;; org-datetree-find-date-create
 	    (when outline-path 'subtree-at-point))))
-	(`(file+function ,path ,function)
+	(`(file+function ,path ,(and function (pred functionp)))
 	 (set-buffer (org-capture-target-buffer path))
 	 (org-capture-put-target-region-and-position)
 	 (widen)
@@ -1120,7 +1114,7 @@ Store them in the capture property list."
 	 (org-capture-put :exact-position (point))
 	 (setq target-entry-p
 	       (and (derived-mode-p 'org-mode) (org-at-heading-p))))
-	(`(function ,fun)
+	(`(function ,(and fun (pred functionp)))
 	 (funcall fun)
 	 (org-capture-put :exact-position (point))
 	 (setq target-entry-p
@@ -1177,7 +1171,7 @@ may have been stored before."
   (unless inhibit-wconf-store
     (org-capture-put :return-to-wconf (current-window-configuration)))
   (delete-other-windows)
-  (org-switch-to-buffer-other-window
+  (switch-to-buffer-other-window
    (org-capture-get-indirect-buffer (org-capture-get :buffer) "CAPTURE"))
   (widen)
   (org-fold-show-all)
@@ -1506,13 +1500,15 @@ Of course, if exact position has been required, just put it there."
 		  (point))))))
     (with-current-buffer (buffer-base-buffer (current-buffer))
       (org-with-point-at pos
-	(when org-capture-bookmark
+        ;; FIXME: `org-capture-bookmark' is obsolete.  To be removed
+        ;; in future Org releases.
+	(when (with-no-warnings org-capture-bookmark)
 	  (let ((bookmark (plist-get org-bookmark-names-plist :last-capture)))
 	    (when bookmark
               (condition-case err
 	          (bookmark-set bookmark)
                 (error
-                 (message (format "Bookmark set error: %S" err)))))))
+                 (message "Bookmark set error: %S" err))))))
 	(move-marker org-capture-last-stored-marker (point))))))
 
 (defun org-capture-narrow (beg end)
@@ -1694,7 +1690,7 @@ Expansion occurs in a temporary Org mode buffer."
       (message "no template") (ding)
       (sit-for 1))
     (save-window-excursion
-      (org-switch-to-buffer-other-window (get-buffer-create "*Capture*"))
+      (switch-to-buffer-other-window (get-buffer-create "*Capture*"))
       (erase-buffer)
       (setq buffer-file-name nil)
       (setq mark-active nil)

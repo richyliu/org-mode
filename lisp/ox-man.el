@@ -1,6 +1,6 @@
 ;;; ox-man.el --- Man Backend for Org Export Engine -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2011-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2011-2024 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou at gmail dot com>
 ;;      Luis R Anaya <papoanaya aroba hot mail punto com>
@@ -510,8 +510,9 @@ contextual information."
                         (expand-file-name "reshilite" tmpdir)))
              (org-lang (org-element-property :language inline-src-block))
              (lst-lang
-	      (cadr (assq (intern org-lang)
-			  (plist-get info :man-source-highlight-langs))))
+              (and org-lang
+	           (cadr (assq (intern org-lang)
+			       (plist-get info :man-source-highlight-langs)))))
 
              (cmd (concat (expand-file-name "source-highlight")
                           " -s " lst-lang
@@ -614,10 +615,8 @@ INFO is a plist holding contextual information.  See
          ;; Ensure DESC really exists, or set it to nil.
          (desc (and (not (string= desc "")) desc))
          (path (pcase type
-                 ((or "http" "https" "ftp" "mailto")
-                  (concat type ":" raw-path))
                  ("file" (org-export-file-uri raw-path))
-                 (_ raw-path))))
+                 (_ (concat type ":" raw-path)))))
     (cond
      ;; Link type is handled by a special function.
      ((org-export-custom-protocol-maybe link desc 'man info))
@@ -757,8 +756,9 @@ contextual information."
 	   (code (org-element-property :value src-block))
 	   (org-lang (org-element-property :language src-block))
 	   (lst-lang
-	    (cadr (assq (intern org-lang)
-			(plist-get info :man-source-highlight-langs))))
+            (and org-lang
+	         (cadr (assq (intern org-lang)
+			     (plist-get info :man-source-highlight-langs)))))
 	   (cmd (concat "source-highlight"
 			" -s " lst-lang
 			" -f groff_man "

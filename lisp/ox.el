@@ -1,9 +1,9 @@
 ;;; ox.el --- Export Framework for Org Mode          -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2012-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <mail@nicolasgoaziou.fr>
-;; Maintainer: Nicolas Goaziou <mail@nicolasgoaziou.fr>
+;; Maintainer: Ihor Radchenko <yantar92 at posteo dot net>
 ;; Keywords: outlines, hypermedia, calendar, wp
 
 ;; This file is part of GNU Emacs.
@@ -140,6 +140,7 @@
     (:with-properties nil "prop" org-export-with-properties)
     (:with-smart-quotes nil "'" org-export-with-smart-quotes)
     (:with-special-strings nil "-" org-export-with-special-strings)
+    (:with-special-rows nil nil nil)
     (:with-statistics-cookies nil "stat" org-export-with-statistics-cookies)
     (:with-sub-superscript nil "^" org-export-with-sub-superscripts)
     (:with-toc nil "toc" org-export-with-toc)
@@ -150,6 +151,7 @@
     (:with-title nil "title" org-export-with-title)
     (:with-todo-keywords nil "todo" org-export-with-todo-keywords)
     ;; Citations processing.
+    (:with-cite-processors nil nil org-export-process-citations)
     (:cite-export "CITE_EXPORT" nil org-cite-export-processors))
   "Alist between export properties and ways to set them.
 
@@ -383,6 +385,14 @@ This option can also be set with the OPTIONS keyword,
 e.g. \"date:nil\"."
   :group 'org-export-general
   :type 'boolean
+  :safe #'booleanp)
+
+(defcustom org-export-process-citations t
+  "Non-nil means process citations using citation processors.
+nil will leave citation processing to export backend."
+  :group 'org-export-general
+  :type 'boolean
+  :package-version '(Org . "9.7")
   :safe #'booleanp)
 
 (defcustom org-export-date-timestamp-format nil
@@ -1634,11 +1644,10 @@ an alist where associations are (VARIABLE-NAME VALUE)."
 ;; `org-export--collect-tree-properties'.
 ;;
 ;; Dedicated functions focus on computing the value of specific tree
-;; properties during initialization.  Thus,
-;; `org-export--populate-ignore-list' lists elements and objects that
-;; should be skipped during export, `org-export--get-min-level' gets
-;; the minimal exportable level, used as a basis to compute relative
-;; level for headlines.  Eventually
+;; properties during initialization.  Thus, `org-export--prune-tree'
+;; lists elements and objects that should be skipped during export,
+;; `org-export--get-min-level' gets the minimal exportable level, used
+;; as a basis to compute relative level for headlines.  Eventually
 ;; `org-export--collect-headline-numbering' builds an alist between
 ;; headlines and their numbering.
 
@@ -1839,7 +1848,9 @@ not exported."
      (and (org-export-table-has-special-column-p
 	   (org-element-lineage datum 'table))
 	  (org-export-first-sibling-p datum options)))
-    (table-row (org-export-table-row-is-special-p datum options))
+    (table-row
+     (unless (plist-get options :with-special-rows)
+       (org-export-table-row-is-special-p datum options)))
     (timestamp
      ;; `:with-timestamps' only applies to isolated timestamps
      ;; objects, i.e. timestamp objects in a paragraph containing only
@@ -2599,6 +2610,8 @@ DROP-CONTENTS, and DROP-LOCALS.
 In addition, buffer-local variables are set according to #+BIND:
 keywords."
   (declare (debug t))
+  ;; Drop keyword arguments from BODY.
+  (while (keywordp (car body)) (pop body) (pop body))
   (org-with-gensyms (bind-variables)
     `(let ((,bind-variables (org-export--list-bound-variables)))
        (org-element-with-buffer-copy
@@ -2921,6 +2934,9 @@ returned by the function."
     (backend &optional subtreep visible-only body-only ext-plist)
   "Transcode current Org buffer into BACKEND code.
 
+See info node `(org)Advanced Export Configuration' for the details of
+the transcoding process.
+
 BACKEND is either an export backend, as returned by, e.g.,
 `org-export-create-backend', or a symbol referring to
 a registered backend.
@@ -2997,7 +3013,8 @@ Return code as a string."
                    (if (or (not (functionp template)) body-only) full-body
 	             (funcall template full-body info))))
              ;; Call citation export finalizer.
-             (setq output (org-cite-finalize-export output info))
+             (when (plist-get info :with-cite-processors)
+               (setq output (org-cite-finalize-export output info)))
 	     ;; Remove all text properties since they cannot be
 	     ;; retrieved from an external process.  Finally call
 	     ;; final-output filter and return result.
@@ -3067,8 +3084,9 @@ still inferior to file-local settings."
            info (org-export-get-environment backend subtreep ext-plist)))
     ;; Pre-process citations environment, i.e. install
     ;; bibliography list, and citation processor in INFO.
-    (org-cite-store-bibliography info)
-    (org-cite-store-export-processor info)
+    (when (plist-get info :with-cite-processors)
+      (org-cite-store-bibliography info)
+      (org-cite-store-export-processor info))
     ;; De-activate uninterpreted data from parsed keywords.
     (dolist (entry (append (org-export-get-all-options backend)
                            org-export-options-alist))
@@ -3108,8 +3126,9 @@ still inferior to file-local settings."
     ;; Process citations and bibliography.  Replace each citation
     ;; and "print_bibliography" keyword in the parse tree with
     ;; the output of the selected citation export processor.
-    (org-cite-process-citations info)
-    (org-cite-process-bibliography info)
+    (when (plist-get info :with-cite-processors)
+      (org-cite-process-citations info)
+      (org-cite-process-bibliography info))
     info))
 
 ;;;###autoload
@@ -4358,7 +4377,7 @@ Return modified DATA."
 			     (or rules org-export-default-inline-image-rule))
 		;; Replace contents with image link.
 		(org-element-adopt
-		    (org-element-set-contents l nil)
+		    (org-element-set-contents l)
 		  (with-temp-buffer
 		    (save-excursion (insert contents))
 		    (org-element-link-parser))))))))
@@ -4794,7 +4813,10 @@ objects of the same type."
 	 (lambda (el)
            (let ((cached (org-element-property :org-export--counter el)))
 	     (cond
-	      ((eq element el) (1+ counter))
+	      ((and (eq element el)
+                    (or (not predicate)
+                        (funcall predicate el info)))
+               (1+ counter))
               ;; Use cached result.
               ((and cached
                     (equal predicate (car cached))
@@ -5852,7 +5874,7 @@ INFO is the current export state, as a plist."
 		    (let ((table (make-hash-table :test #'eq)))
 		      (plist-put info :smart-quote-cache table)
 		      table)))
-	 (value (gethash parent cache 'missing-data)))
+	 (value (gethash (cons parent (org-element-secondary-p s)) cache 'missing-data)))
     (if (not (eq value 'missing-data)) (cdr (assq s value))
       (let (level1-open full-status)
 	(org-element-map
@@ -5920,7 +5942,7 @@ INFO is the current export state, as a plist."
 	      (when current-status
 		(push (cons text (nreverse current-status)) full-status))))
 	  info nil org-element-recursive-objects)
-	(puthash parent full-status cache)
+	(puthash (cons parent (org-element-secondary-p s)) full-status cache)
 	(cdr (assq s full-status))))))
 
 (defun org-export-activate-smart-quotes (s encoding info &optional original)
@@ -6906,8 +6928,8 @@ within Emacs."
   (interactive "P")
   (let ((source (org-export--stack-source-at-point)))
     (cond ((processp source)
-	   (org-switch-to-buffer-other-window (process-buffer source)))
-	  ((bufferp source) (org-switch-to-buffer-other-window source))
+	   (switch-to-buffer-other-window (process-buffer source)))
+	  ((bufferp source) (switch-to-buffer-other-window source))
 	  (t (org-open-file source in-emacs)))))
 
 (defvar org-export-stack-mode-map
@@ -7251,7 +7273,7 @@ back to standard interface."
         ;; At first call, create frame layout in order to display menu.
         (unless (get-buffer "*Org Export Dispatcher*")
 	  (delete-other-windows)
-	  (org-switch-to-buffer-other-window
+	  (switch-to-buffer-other-window
 	   (get-buffer-create "*Org Export Dispatcher*"))
           (setq cursor-type nil)
           (setq header-line-format

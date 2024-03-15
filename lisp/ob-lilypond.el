@@ -1,6 +1,6 @@
 ;;; ob-lilypond.el --- Babel Functions for Lilypond  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2010-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2024 Free Software Foundation, Inc.
 
 ;; Author: Martyn Jago
 ;; Keywords: babel language, literate programming
@@ -142,7 +142,7 @@ blocks.")
 	       (replace-regexp-in-string
 		(concat "$" (regexp-quote name))
 		(if (stringp value) value (format "%S" value))
-		body))))
+		body t t))))
      vars)
     (concat
      (and prologue (concat prologue "\n"))
@@ -230,7 +230,7 @@ If error in compilation, attempt to mark the error in lilypond org file."
 	  (delete-file org-babel-lilypond-temp-file))
 	(rename-file org-babel-lilypond-tangled-file
 		     org-babel-lilypond-temp-file))
-      (org-switch-to-buffer-other-window "*lilypond*")
+      (switch-to-buffer-other-window "*lilypond*")
       (erase-buffer)
       (org-babel-lilypond-compile-lilyfile org-babel-lilypond-temp-file)
       (goto-char (point-min))
@@ -280,7 +280,7 @@ FILE-NAME is full path to lilypond file."
   "Mark the erroneous lines in the lilypond org buffer.
 FILE-NAME is full path to lilypond file.
 LINE is the erroneous line."
-  (org-switch-to-buffer-other-window
+  (switch-to-buffer-other-window
    (concat (file-name-nondirectory
             (org-babel-lilypond-switch-extension file-name ".org"))))
   (let ((temp (point)))

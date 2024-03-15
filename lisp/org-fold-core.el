@@ -1,6 +1,6 @@
 ;;; org-fold-core.el --- Folding buffer text -*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 2020-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2020-2024 Free Software Foundation, Inc.
 ;;
 ;; Author: Ihor Radchenko <yantar92 at posteo dot net>
 ;; Keywords: folding, invisible text
@@ -280,12 +280,13 @@
 
 ;;; Customization
 
-(defcustom org-fold-core-style 'text-properties
+(defcustom org-fold-core-style (if (version< emacs-version "29")
+                                   'text-properties
+                                 'overlays)
   "Internal implementation detail used to hide folded text.
 Can be either `text-properties' or `overlays'.
-The former is faster on large files, while the latter is generally
-less error-prone with regard to third-party packages that haven't yet
-adapted to the new folding implementation.
+The former is faster on large files in Emacs <29, while the latter is
+generally less error-prone with regard to third-party packages.
 
 Important: This variable must be set before loading Org."
   :group 'org
@@ -433,7 +434,7 @@ Return nil when there is no matching folding spec."
   (org-fold-core-get-folding-spec-from-alias spec-or-alias))
 
 (defsubst org-fold-core--check-spec (spec-or-alias)
-  "Throw an error if SPEC-OR-ALIAS is not in `org-fold-core--spec-priority-list'."
+  "Throw an error if SPEC-OR-ALIAS is not in `org-fold-core-folding-spec-list'."
   (unless (org-fold-core-folding-spec-p spec-or-alias)
     (error "%s is not a valid folding spec" spec-or-alias)))
 
@@ -633,6 +634,10 @@ unless RETURN-ONLY is non-nil."
                                                 text-property-default-nonsticky
                                                 full-prop-list))))))))))))))
 
+(defun org-fold-core--update-buffer-folds ()
+  "Copy folding state in a new buffer with text copied from old buffer."
+  (org-fold-core--property-symbol-get-create (car (org-fold-core-folding-spec-list))))
+
 (defun org-fold-core-decouple-indirect-buffer-folds ()
   "Copy and decouple folding state in a newly created indirect buffer.
 This function is mostly intended to be used in
@@ -640,7 +645,7 @@ This function is mostly intended to be used in
   (when (and (buffer-base-buffer)
              (eq org-fold-core-style 'text-properties)
              (not (memql 'ignore-indirect org-fold-core--optimise-for-huge-buffers)))
-    (org-fold-core--property-symbol-get-create (car (org-fold-core-folding-spec-list)))))
+    (org-fold-core--update-buffer-folds)))
 
 ;;; API
 
@@ -783,19 +788,16 @@ corresponding folding spec (if the text is folded using that spec)."
     (when (and spec (not (eq spec 'all))) (org-fold-core--check-spec spec))
     (org-with-point-at pom
       (cond
-       ((eq spec 'all)
-        (let ((result))
-	  (dolist (spec (org-fold-core-folding-spec-list))
-	    (let ((val (if (eq org-fold-core-style 'text-properties)
-                           (get-text-property (point) (org-fold-core--property-symbol-get-create spec nil t))
-                         (get-char-property (point) (org-fold-core--property-symbol-get-create spec nil t)))))
-	      (when val (push val result))))
-          (reverse result)))
-       ((null spec)
-        (let ((result (if (eq org-fold-core-style 'text-properties)
-                          (get-text-property (point) 'invisible)
-                        (get-char-property (point) 'invisible))))
-          (when (org-fold-core-folding-spec-p result) result)))
+       ((or (null spec) (eq spec 'all))
+        (catch :single-spec
+          (let ((result))
+	    (dolist (lspec (org-fold-core-folding-spec-list))
+	      (let ((val (if (eq org-fold-core-style 'text-properties)
+                             (get-text-property (point) (org-fold-core--property-symbol-get-create lspec nil t))
+                           (get-char-property (point) (org-fold-core--property-symbol-get-create lspec nil t)))))
+                (when (and val (null spec)) (throw :single-spec val))
+	        (when val (push val result))))
+            (reverse result))))
        (t (if (eq org-fold-core-style 'text-properties)
               (get-text-property (point) (org-fold-core--property-symbol-get-create spec nil t))
             (get-char-property (point) (org-fold-core--property-symbol-get-create spec nil t))))))))
@@ -1033,6 +1035,23 @@ If SPEC-OR-ALIAS is omitted and FLAG is nil, unfold everything in the region."
     (when spec (org-fold-core--check-spec spec))
     (with-silent-modifications
       (org-with-wide-buffer
+       ;; Arrange fontifying newlines after all the folds between FROM
+       ;; and TO to match the first character before the fold; not the
+       ;; last as per Emacs defaults.  This makes :extend faces span
+       ;; past the ellipsis.  See bug#65896.  The face properties are
+       ;; assigned via `org-activate-folds'.
+       (when (equal ?\n (char-after from))
+         (font-lock-flush from (1+ from)))
+       (when (equal ?\n (char-after to))
+         (font-lock-flush to (1+ to)))
+       (dolist (region (org-fold-core-get-regions :from from :to to :specs spec))
+         (when (equal ?\n (char-after (cadr region)))
+           (font-lock-flush (cadr region) (1+ (cadr region))))
+         ;; Re-fontify beginning of the fold - we may
+         ;; unfold inside an existing fold, with FROM begin a newline
+         ;; after spliced fold.
+         (when (equal ?\n (char-after (car region)))
+           (font-lock-flush (car region) (1+ (car region)))))
        (when (eq org-fold-core-style 'overlays)
          (if org-fold-core--keep-overlays
              (mapc
@@ -1092,7 +1111,12 @@ If SPEC-OR-ALIAS is omitted and FLAG is nil, unfold everything in the region."
                          (setq pos next))
                      (setq pos (next-single-char-property-change pos 'invisible nil to)))))))
            (when (eq org-fold-core-style 'text-properties)
-	     (remove-text-properties from to (list (org-fold-core--property-symbol-get-create spec) nil)))))))))
+	     (remove-text-properties from to (list (org-fold-core--property-symbol-get-create spec) nil)))))
+       ;; Re-calculate trailing faces for all the folds revealed
+       ;; by unfolding or created by folding.
+       (dolist (region (org-fold-core-get-regions :from from :to to :specs spec))
+         (when (equal ?\n (char-after (cadr region)))
+           (font-lock-flush (cadr region) (1+ (cadr region)))))))))
 
 (cl-defmacro org-fold-core-regions (regions &key override clean-markers relative)
   "Fold every region in REGIONS list in current buffer.
@@ -1289,6 +1313,8 @@ instead of text properties.  The created overlays will be stored in
   "Non-nil: skip processing modifications in `org-fold-core--fix-folded-region'.")
 (defvar org-fold-core--ignore-fragility-checks nil
   "Non-nil: skip fragility checks in `org-fold-core--fix-folded-region'.")
+(defvar org-fold-core--suppress-folding-fix nil
+  "Non-nil: skip folding fix in `org-fold-core--fix-folded-region'.")
 
 (defmacro org-fold-core-ignore-modifications (&rest body)
   "Run BODY ignoring buffer modifications in `org-fold-core--fix-folded-region'."
@@ -1297,11 +1323,46 @@ instead of text properties.  The created overlays will be stored in
      (unwind-protect (progn ,@body)
        (setq org-fold-core--last-buffer-chars-modified-tick (buffer-chars-modified-tick)))))
 
+(defmacro org-fold-core-suppress-folding-fix (&rest body)
+  "Run BODY skipping re-folding checks in `org-fold-core--fix-folded-region'."
+  (declare (debug (form body)) (indent 0))
+  `(let ((org-fold-core--suppress-folding-fix t))
+     (progn ,@body)))
+
 (defmacro org-fold-core-ignore-fragility-checks (&rest body)
   "Run BODY skipping :fragility checks in `org-fold-core--fix-folded-region'."
   (declare (debug (form body)) (indent 0))
   `(let ((org-fold-core--ignore-fragility-checks t))
      (progn ,@body)))
+
+(defvar org-fold-core--region-delayed-list nil
+  "List holding (MKFROM MKTO FLAG SPEC-OR-ALIAS) arguments to process.
+The list is used by `org-fold-core--region-delayed'.")
+(defun org-fold-core--region-delayed (from to flag &optional spec-or-alias)
+  "Call `org-fold-core-region' after current command.
+Pass the same FROM, TO, FLAG, and SPEC-OR-ALIAS."
+  ;; Setup delayed folding.
+  (add-hook 'post-command-hook #'org-fold-core--process-delayed)
+  (let ((frommk (make-marker))
+        (tomk (make-marker)))
+    (set-marker frommk from (current-buffer))
+    (set-marker tomk to (current-buffer))
+    (push (list frommk tomk flag spec-or-alias) org-fold-core--region-delayed-list)))
+
+(defun org-fold-core--process-delayed ()
+  "Perform folding for `org-fold-core--region-delayed-list'."
+  (when org-fold-core--region-delayed-list
+    (mapc (lambda (args)
+            (when (and (buffer-live-p (marker-buffer (nth 0 args)))
+                       (buffer-live-p (marker-buffer (nth 1 args)))
+                       (< (nth 0 args) (nth 1 args)))
+              (org-with-point-at (car args)
+                (apply #'org-fold-core-region args))))
+          ;; Restore the initial folding order.
+          (nreverse org-fold-core--region-delayed-list))
+    ;; Cleanup `post-command-hook'.
+    (remove-hook 'post-command-hook #'org-fold-core--process-delayed)
+    (setq org-fold-core--region-delayed-list nil)))
 
 (defvar-local org-fold-core--last-buffer-chars-modified-tick nil
   "Variable storing the last return value of `buffer-chars-modified-tick'.")
@@ -1330,7 +1391,7 @@ property, unfold the region if the :fragile function returns non-nil."
       ;; buffer.  Work around Emacs bug#46982.
       ;; Re-hide text inserted in the middle/front/back of a folded
       ;; region.
-      (unless (equal from to) ; Ignore deletions.
+      (unless (or org-fold-core--suppress-folding-fix (equal from to)) ; Ignore deletions.
         (when (eq org-fold-core-style 'text-properties)
           (org-fold-core-cycle-over-indirect-buffers
 	    (dolist (spec (org-fold-core-folding-spec-list))
@@ -1420,7 +1481,10 @@ property, unfold the region if the :fragile function returns non-nil."
                                             (cons fold-begin fold-end)
                                             spec))
                              ;; Reveal completely, not just from the SPEC.
-                             (org-fold-core-region fold-begin fold-end nil)))))
+                             ;; Do it only after command is finished -
+                             ;; some Emacs commands assume that
+                             ;; visibility is not altered by `after-change-functions'.
+                             (org-fold-core--region-delayed fold-begin fold-end nil)))))
                      ;; Move to next fold.
                      (setq pos (org-fold-core-next-folding-state-change spec pos local-to)))))))))))))
 

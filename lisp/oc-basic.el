@@ -1,6 +1,6 @@
 ;;; oc-basic.el --- basic backend for citations  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2021-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2021-2024 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <mail@nicolasgoaziou.fr>
 
@@ -78,9 +78,19 @@
 (declare-function org-open-at-point "org" (&optional arg))
 (declare-function org-open-file "org" (path &optional in-emacs line search))
 
+(declare-function org-element-create "org-element-ast" (type &optional props &rest children))
+(declare-function org-element-set "org-element-ast" (old new &optional keep-props))
+
 (declare-function org-element-interpret-data "org-element" (data))
+(declare-function org-element-parse-secondary-string "org-element" (string restriction &optional parent))
+(declare-function org-element-map "org-element"
+                  ( data types fun
+                    &optional
+                    info first-match no-recursion
+                    with-affiliated no-undefer))
 (declare-function org-element-property "org-element-ast" (property node))
 (declare-function org-element-type-p "org-element-ast" (node types))
+(declare-function org-element-contents "org-element-ast" (node))
 
 (declare-function org-export-data "org-export" (data info))
 (declare-function org-export-derived-backend-p "org-export" (backend &rest backends))
@@ -366,7 +376,7 @@ personal names of the form \"family, given\"."
     (cond
      ((stringp names) (setq names-string names))
      ((org-element-type-p names 'raw)
-      (setq names-string (org-element-contents names)
+      (setq names-string (mapconcat #'identity (org-element-contents names) "")
             raw-p t)))
     (when names-string
       (setq names-string
@@ -375,7 +385,7 @@ personal names of the form \"family, given\"."
                (if (eq 1 (length name))
                    (cdr (split-string name))
                  (car (split-string name ", "))))
-             (split-string names " and ")
+             (split-string names-string " and ")
              ", "))
       (if raw-p (org-export-raw-string names-string)
         names-string))))
@@ -462,6 +472,38 @@ necessary, unless optional argument NO-SUFFIX is non-nil."
                     new))))
          (if no-suffix year (concat year suffix)))))))
 
+(defun org-cite-basic--print-bibtex-string (element &optional info)
+  "Print Bibtex formatted string ELEMENT, according to Bibtex syntax.
+Remove all the {...} that are not a part of LaTeX macros and parse the
+LaTeX fragments.  Do nothing when current backend is derived from
+LaTeX, according to INFO.
+
+Return updated ELEMENT."
+  (if (org-export-derived-backend-p (plist-get info :back-end) 'latex)
+      ;; Derived from LaTeX, no need to use manual ad-hoc LaTeX
+      ;; parser.
+      element
+    ;; Convert ELEMENT to anonymous when ELEMENT is string.
+    ;; Otherwise, we cannot modify ELEMENT by side effect.
+    (when (org-element-type-p element 'plain-text)
+      (setq element (org-element-create 'anonymous nil element)))
+    ;; Approximately parse LaTeX fragments, assuming Org mode syntax
+    ;; (it is close to original LaTeX, and we do not want to
+    ;; re-implement complete LaTeX parser here))
+    (org-element-map element t
+      (lambda (str)
+        (when (stringp str)
+          (org-element-set
+           str
+           (org-element-parse-secondary-string
+            str '(latex-fragment entity))))))
+    ;; Strip the remaining { and }.
+    (org-element-map element t
+      (lambda (str)
+        (when (stringp str)
+          (org-element-set str (replace-regexp-in-string "[{}]" "" str)))))
+    element))
+
 (defun org-cite-basic--print-entry (entry style &optional info)
   "Format ENTRY according to STYLE string.
 ENTRY is an alist, as returned by `org-cite-basic--get-entry'.
@@ -473,27 +515,29 @@ Optional argument INFO is the export state, as a property list."
              (org-cite-basic--get-field 'journal entry info)
              (org-cite-basic--get-field 'institution entry info)
              (org-cite-basic--get-field 'school entry info))))
-    (pcase style
-      ("plain"
-       (let ((year (org-cite-basic--get-year entry info 'no-suffix)))
-         (org-cite-concat
-          (org-cite-basic--shorten-names author) ". "
-          title (and from (list ", " from)) ", " year ".")))
-      ("numeric"
-       (let ((n (org-cite-basic--key-number (cdr (assq 'id entry)) info))
-             (year (org-cite-basic--get-year entry info 'no-suffix)))
-         (org-cite-concat
-          (format "[%d] " n) author ", "
-          (org-cite-emphasize 'italic title)
-          (and from (list ", " from)) ", "
-          year ".")))
-      ;; Default to author-year.  Use year disambiguation there.
-      (_
-       (let ((year (org-cite-basic--get-year entry info)))
-         (org-cite-concat
-          author " (" year "). "
-          (org-cite-emphasize 'italic title)
-          (and from (list ", " from)) "."))))))
+    (org-cite-basic--print-bibtex-string
+     (pcase style
+       ("plain"
+        (let ((year (org-cite-basic--get-year entry info 'no-suffix)))
+          (org-cite-concat
+           (org-cite-basic--shorten-names author) ". "
+           title (and from (list ", " from)) ", " year ".")))
+       ("numeric"
+        (let ((n (org-cite-basic--key-number (cdr (assq 'id entry)) info))
+              (year (org-cite-basic--get-year entry info 'no-suffix)))
+          (org-cite-concat
+           (format "[%d] " n) author ", "
+           (org-cite-emphasize 'italic title)
+           (and from (list ", " from)) ", "
+           year ".")))
+       ;; Default to author-year.  Use year disambiguation there.
+       (_
+        (let ((year (org-cite-basic--get-year entry info)))
+          (org-cite-concat
+           author " (" year "). "
+           (org-cite-emphasize 'italic title)
+           (and from (list ", " from)) "."))))
+     info)))
 
 
 ;;; "Activate" capability
@@ -666,22 +710,30 @@ export communication channel, as a property list."
       ;; "author" style.
       (`(,(or "author" "a") . ,variant)
        (let ((caps (member variant '("caps" "c"))))
-         (org-export-data
-          (org-cite-mapconcat
-           (lambda (key)
-             (or
-              (let ((author (org-cite-basic--get-author key info)))
-                (if caps (org-cite-capitalize author) author))
-              "??"))
-           (org-cite-get-references citation t)
-           org-cite-basic-author-year-separator)
+         (org-cite-basic--format-author-year
+          citation
+          (lambda (p c s) (org-cite-concat p c s))
+          (lambda (prefix author _ suffix)
+            (org-cite-concat
+             prefix
+             (if caps (org-cite-capitalize author) author)
+             suffix))
           info)))
       ;; "noauthor" style.
       (`(,(or "noauthor" "na") . ,variant)
-       (format (if (funcall has-variant-p variant 'bare) "%s" "(%s)")
-               (mapconcat (lambda (key) (or (org-cite-basic--get-year key info) "????"))
-                          (org-cite-get-references citation t)
-                          org-cite-basic-author-year-separator)))
+       (let ((bare? (funcall has-variant-p variant 'bare)))
+         (org-cite-basic--format-author-year
+          citation
+          (lambda (prefix contents suffix)
+            (org-cite-concat
+             (unless bare? "(")
+             prefix
+             contents
+             suffix
+             (unless bare? ")")))
+          (lambda (prefix _ year suffix)
+            (org-cite-concat prefix year suffix))
+          info)))
       ;; "nocite" style.
       (`(,(or "nocite" "n") . ,_) nil)
       ;; "text" and "note" styles.
@@ -699,8 +751,9 @@ export communication channel, as a property list."
             (org-cite-concat p
                              (if caps (org-cite-capitalize a) a)
                              (if bare " " " (")
-                             y s
-                             (and (not bare) ")")))
+                             y
+                             (and (not bare) ")")
+                             s))
           info)))
       ;; "numeric" style.
       ;;

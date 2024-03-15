@@ -1,6 +1,6 @@
 ;;; ol-gnus.el --- Links to Gnus Groups and Messages -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;;         Tassilo Horn <tassilo at member dot fsf dot org>
@@ -123,7 +123,7 @@ If `org-store-link' was called with a prefix arg the meaning of
 	      (url-encode-url message-id))
     (concat "gnus:" group "#" message-id)))
 
-(defun org-gnus-store-link ()
+(defun org-gnus-store-link (&optional _interactive?)
   "Store a link to a Gnus folder or message."
   (pcase major-mode
     (`gnus-group-mode

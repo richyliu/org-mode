@@ -1,6 +1,6 @@
 ;;; ox-odt.el --- OpenDocument Text Exporter for Org Mode -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2010-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2024 Free Software Foundation, Inc.
 
 ;; Author: Jambunathan K <kjambunathan at gmail dot com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -2246,11 +2246,9 @@ used as a communication channel."
   (cl-assert (org-element-type-p element 'link))
   (let* ((src (let* ((type (org-element-property :type element))
 		     (raw-path (org-element-property :path element)))
-		(cond ((member type '("http" "https"))
-		       (concat type ":" raw-path))
-		      ((file-name-absolute-p raw-path)
+		(cond ((file-name-absolute-p raw-path)
 		       (expand-file-name raw-path))
-		      (t raw-path))))
+		      (t (concat type ":" raw-path)))))
 	 (src-expanded (if (file-name-absolute-p src) src
 			 (expand-file-name src (file-name-directory
 						(plist-get info :input-file)))))
@@ -3111,7 +3109,7 @@ and prefix with \"OrgSrc\".  For example,
 (defun org-odt-do-format-code
     (code info &optional lang refs retain-labels num-start)
   (let* ((lang (or (assoc-default lang org-src-lang-modes) lang))
-	 (lang-mode (and lang (intern (format "%s-mode" lang))))
+	 (lang-mode (if lang (intern (format "%s-mode" lang)) #'ignore))
 	 (code-lines (org-split-string code "\n"))
 	 (code-length (length code-lines))
 	 (use-htmlfontify-p (and (functionp lang-mode)
@@ -3248,8 +3246,9 @@ Return a cons of (TABLE-CELL-STYLE-NAME . PARAGRAPH-STYLE-NAME).
 
 When STYLE-SPEC is nil, style the table cell the conventional way
 - choose cell borders based on row and column groupings and
-choose paragraph alignment based on `org-col-cookies' text
-property.  See also `org-odt-table-style-spec'.
+choose paragraph alignment based on table alignment cookies (see info
+node `(org)Column Width and Alignment').  See also
+`org-odt-table-style-spec'.
 
 When STYLE-SPEC is non-nil, ignore the above cookie and return
 styles congruent with the ODF-1.2 specification."
@@ -4081,9 +4080,6 @@ contextual information."
 	     (message "Created %s" (expand-file-name target))
 	     ;; Cleanup work directory and work files.
 	     (funcall --cleanup-xml-buffers)
-	     ;; Open the OpenDocument file in archive-mode for
-	     ;; examination.
-	     (find-file-noselect target t)
 	     ;; Return exported file.
 	     (cond
 	      ;; Case 1: Conversion desired on exported file.  Run the
@@ -4324,15 +4320,15 @@ The list of the form (OUTPUT-FMT-1 OUTPUT-FMT-2 ...)."
 (defun org-odt-convert-read-params ()
   "Return IN-FILE and OUT-FMT params for `org-odt-do-convert'.
 This is a helper routine for interactive use."
-  (let* ((input (if (featurep 'ido) 'ido-completing-read 'completing-read))
-	 (in-file (read-file-name "File to be converted: "
+  (let* ((in-file (read-file-name "File to be converted: "
 				  nil buffer-file-name t))
 	 (in-fmt (file-name-extension in-file))
 	 (out-fmt-choices (org-odt-reachable-formats in-fmt))
 	 (out-fmt
 	  (or (and out-fmt-choices
-		   (funcall input "Output format: "
-			    out-fmt-choices nil nil nil))
+		   (completing-read
+                    "Output format: "
+		    out-fmt-choices nil nil nil))
 	      (error
 	       "No known converter or no known output formats for %s files"
 	       in-fmt))))
@@ -4351,11 +4347,6 @@ is non-nil then the newly converted file is opened using
   (org-odt-do-convert in-file out-fmt open))
 
 ;;; Library Initializations
-
-(dolist (desc org-odt-file-extensions)
-  ;; Let Emacs open all OpenDocument files in archive mode.
-  (add-to-list 'auto-mode-alist
-	       (cons (concat  "\\." (car desc) "\\'") 'archive-mode)))
 
 (provide 'ox-odt)
 

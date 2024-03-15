@@ -1,6 +1,6 @@
 ;;; test-ob-haskell-ghci.el --- tests for ob-haskell.el GHCi  -*- lexical-binding: t; -*-
 
-;; Copyright (c) 2023 Free Software Foundation, Inc.
+;; Copyright (c) 2023-2024 Free Software Foundation, Inc.
 ;; Authors: Bruno BARBIER <brubar.cs@gmail.com>
 
 ;; This file is part of GNU Emacs.
@@ -117,8 +117,6 @@ main
 (ert-deftest ob-haskell/session-named-none-means-one-shot-sessions ()
   "When no session, use a new session.
 \"none\" is a special name that means `no session'."
-  (test-ob-haskell-ghci ":session none" "x=2" nil)
-  (should-not (equal 2 (test-ob-haskell-ghci ":session \"none\"" "x" nil)))
   (test-ob-haskell-ghci ":session none" "x=2" nil)
   (should-not (equal 2 (test-ob-haskell-ghci ":session \"none\"" "x" nil))))
 

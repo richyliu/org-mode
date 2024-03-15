@@ -1,6 +1,6 @@
 ;;; ob-shell.el --- Babel Functions for Shell Evaluation -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
 ;; Author: Eric Schulte
 ;; Maintainer: Matthew Trzcinski <matt@excalamus.com>
@@ -45,6 +45,11 @@
 (declare-function orgtbl-to-generic "org-table" (table params))
 
 (defvar org-babel-default-header-args:shell '())
+
+(defconst org-babel-header-args:shell
+  '((async               . ((yes no))))
+  "Shell-specific header arguments.")
+
 (defvar org-babel-shell-names)
 
 (defconst org-babel-shell-set-prompt-commands
@@ -52,8 +57,6 @@
     ("fish" . "function fish_prompt\n\techo \"%s\"\nend")
     ;; prompt2 is like PS2 in POSIX shells.
     ("csh" . "set prompt=\"%s\"\nset prompt2=\"\"")
-    ;; PowerShell, similar to fish, does not have PS2 equivalent.
-    ("posh" . "function prompt { \"%s\" }")
     ;; PROMPT_COMMAND can override PS1 settings.  Disable it.
     ;; Disable PS2 to avoid garbage in multi-line inputs.
     (t . "PROMPT_COMMAND=;PS1=\"%s\";PS2="))
@@ -88,6 +91,9 @@ variables."
 	      name))
     (funcall (if (fboundp 'defvar-1) #'defvar-1 #'set) ;Emacs-29
              (intern (concat "org-babel-default-header-args:" name))
+             nil)
+    (funcall (if (fboundp 'defvar-1) #'defvar-1 #'set) ;Emacs-29
+             (intern (concat "org-babel-header-args:" name))
              nil)))
 
 (defcustom org-babel-shell-names
@@ -267,9 +273,11 @@ var of the same value."
                               org-babel-shell-set-prompt-commands))
                   (alist-get t org-babel-shell-set-prompt-commands))
               org-babel-sh-prompt))
-            (setq-local comint-prompt-regexp
-                        (concat "^" (regexp-quote org-babel-sh-prompt)
-                                " *"))
+            (setq-local
+             org-babel-comint-prompt-regexp-old comint-prompt-regexp
+             comint-prompt-regexp
+             (concat "^" (regexp-quote org-babel-sh-prompt)
+                     " *"))
 	    ;; Needed for Emacs 23 since the marker is initially
 	    ;; undefined and the filter functions try to use it without
 	    ;; checking.

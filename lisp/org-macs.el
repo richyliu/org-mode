@@ -1,6 +1,6 @@
 ;;; org-macs.el --- Top-level Definitions for Org -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -56,8 +56,8 @@ by `package-activate-all').")
   ;; `org-assert-version' calls would fail using strict
   ;; `org-git-version' check because the generated Org version strings
   ;; will not match.
-  `(unless (or org--inhibit-version-check (equal (org-release) ,(org-release)))
-     (warn "Org version mismatch.  Org loading aborted.
+  `(unless (or ,org--inhibit-version-check (equal (org-release) ,(org-release)))
+     (warn "Org version mismatch.
 This warning usually appears when a built-in Org version is loaded
 prior to the more recent Org version.
 
@@ -91,10 +91,15 @@ Version mismatch is commonly encountered in the following situations:
    early in the config.  Ideally, right after the straight.el
    bootstrap.  Moving `use-package' :straight declaration may not be
    sufficient if the corresponding `use-package' statement is
-   deferring the loading."
+   deferring the loading.
+
+4. A new Org version is synchronized with Emacs git repository and
+   stale .elc files are still left from the previous build.
+
+   It is recommended to remove .elc files from lisp/org directory and
+   re-compile."
            ;; Avoid `warn' replacing "'" with "’" (see `format-message').
-           "(straight-use-package 'org)")
-     (error "Org version mismatch.  Make sure that correct `load-path' is set early in init.el")))
+           "(straight-use-package 'org)")))
 
 ;; We rely on org-macs when generating Org version.  Checking Org
 ;; version here will interfere with Org build process.
@@ -178,7 +183,7 @@ EPOM is an element, point, or marker."
 
 (defmacro org-with-remote-undo (buffer &rest body)
   "Execute BODY while recording undo information in current buffer and BUFFER.
-This function is only useful when called from org-agenda buffer."
+This function is only useful when called from Agenda buffer."
   (declare (debug (form body)) (indent 1))
   (org-with-gensyms (cline cmd buf1 buf2 undo1 undo2 c1 c2)
     `(let ((,cline (org-current-line))
@@ -210,7 +215,7 @@ This function is only useful when called from org-agenda buffer."
 (defalias 'org-save-outline-visibility #'org-fold-save-outline-visibility)
 
 (defmacro org-with-wide-buffer (&rest body)
-  "Execute body while temporarily widening the buffer."
+  "Execute BODY while temporarily widening the buffer."
   (declare (debug (body)))
   `(save-excursion
      (save-restriction
@@ -264,11 +269,6 @@ This function is only useful when called from org-agenda buffer."
             (unless modified
               (restore-buffer-modified-p nil))))))))
 
-(defmacro org-no-popups (&rest body)
-  "Suppress popup windows and evaluate BODY."
-  `(let (pop-up-frames pop-up-windows)
-     ,@body))
-
 (defmacro org-element-with-disabled-cache (&rest body)
   "Run BODY without active org-element-cache."
   (declare (debug (form body)) (indent 0))
@@ -290,12 +290,6 @@ FILE is the file name passed to `find-buffer-visiting'."
   (let ((buf (or (get-file-buffer file)
 		 (find-buffer-visiting file))))
     (org-base-buffer buf)))
-
-(defun org-switch-to-buffer-other-window (&rest args)
-  "Switch to buffer in a second window on the current frame.
-In particular, do not allow pop-up frames.
-Returns the newly created buffer."
-  (org-no-popups (apply #'switch-to-buffer-other-window args)))
 
 (defun org-fit-window-to-buffer (&optional window max-height min-height
                                            shrink-only)
@@ -383,6 +377,8 @@ in target-prerequisite files relation."
 
 (defun org-do-remove-indentation (&optional n skip-fl)
   "Remove the maximum common indentation from the buffer.
+Do not consider invisible text when calculating indentation.
+
 When optional argument N is a positive integer, remove exactly
 that much characters from indentation, if possible.  When
 optional argument SKIP-FL is non-nil, skip the first
@@ -403,7 +399,8 @@ line.  Return nil if it fails."
 	;; Remove exactly N indentation, but give up if not possible.
         (when skip-fl (forward-line))
 	(while (not (eobp))
-	  (let ((ind (progn (skip-chars-forward " \t") (current-column))))
+	  (let* ((buffer-invisibility-spec nil) ; do not treat invisible text specially
+                 (ind (progn (skip-chars-forward " \t") (current-column))))
 	    (cond ((< ind n)
                    (if (eolp) (delete-region (line-beginning-position) (point))
                      (throw :exit nil)))
@@ -487,7 +484,7 @@ alist with (\"key\" \"description\") entries.  When one of these
 is selected, only the bare key is returned."
   (save-window-excursion
     (let ((inhibit-quit t)
-	  (buffer (org-switch-to-buffer-other-window "*Org Select*"))
+	  (buffer (switch-to-buffer-other-window "*Org Select*"))
 	  (prompt (or prompt "Select: "))
 	  case-fold-search
 	  current)
@@ -551,6 +548,7 @@ is selected, only the bare key is returned."
 		   ;; selection prefix.
 		   ((assoc current specials) (throw 'exit current))
 		   (t (error "No entry available")))))))
+        (quit-window)
 	(when buffer (kill-buffer buffer))))))
 
 
@@ -997,7 +995,7 @@ Otherwise, return nil."
   "Splits STRING into substrings at SEPARATORS.
 
 SEPARATORS is a regular expression.  When nil, it defaults to
-\"[ \f\t\n\r\v]+\".
+\"[ \\f\\t\\n\\r\\v]+\".
 
 Unlike `split-string', matching SEPARATORS at the beginning and
 end of string are ignored."
@@ -1080,14 +1078,16 @@ Results may be off sometimes if it cannot handle a given
 `display' value."
   (org--string-from-props string 'display 0 (length string)))
 
-(defun org-string-width (string &optional pixels)
+(defun org-string-width (string &optional pixels default-face)
   "Return width of STRING when displayed in the current buffer.
-Return width in pixels when PIXELS is non-nil."
+Return width in pixels when PIXELS is non-nil.
+When PIXELS is nil, DEFAULT-FACE is the face used to calculate relative
+STRING width.  When REFERENCE-FACE is nil, `default' face is used."
   (if (and (version< emacs-version "28") (not pixels))
       ;; FIXME: Fallback to old limited version, because
       ;; `window-pixel-width' is buggy in older Emacs.
       (org--string-width-1 string)
-    ;; Wrap/line prefix will make `window-text-pizel-size' return too
+    ;; Wrap/line prefix will make `window-text-pixel-size' return too
     ;; large value including the prefix.
     (remove-text-properties 0 (length string)
                             '(wrap-prefix t line-prefix t)
@@ -1097,7 +1097,7 @@ Return width in pixels when PIXELS is non-nil."
     ;; is critical to get right string width from pixel width (not needed
     ;; when PIXELS are requested though).
     (unless pixels
-      (remove-text-properties 0 (length string) '(face t) string))
+      (put-text-property 0 (length string) 'face (or default-face 'default) string))
     (let (;; We need to remove the folds to make sure that folded table
           ;; alignment is not messed up.
           (current-invisibility-spec
@@ -1141,11 +1141,11 @@ Return width in pixels when PIXELS is non-nil."
             (setq pixel-width (org-buffer-text-pixel-width))
             (unless pixels
               (erase-buffer)
-              (insert "a")
+              (insert (propertize "a" 'face (or default-face 'default)))
               (setq symbol-width (org-buffer-text-pixel-width))))
           (if pixels
               pixel-width
-            (/ pixel-width symbol-width)))))))
+            (ceiling pixel-width symbol-width)))))))
 
 (defmacro org-current-text-column ()
   "Like `current-column' but ignore display properties.
@@ -1155,7 +1155,7 @@ This function forces `tab-width' value because it is used as a part of
 the parser, to ensure parser consistency when calculating list
 indentation."
   `(progn
-     (unless (= 8 tab-width) (error "Tab width in Org files must be 8, not %d." tab-width))
+     (unless (= 8 tab-width) (error "Tab width in Org files must be 8, not %d.  Please adjust your `tab-width' settings for Org mode." tab-width))
      (string-width (buffer-substring-no-properties
                     (line-beginning-position) (point)))))
 
@@ -1630,7 +1630,9 @@ it for output."
         (cond
          ((functionp command)
           (funcall command (shell-quote-argument relname)))
-         ((stringp command) (shell-command command log-buf)))))
+         ((stringp command)
+          (let ((shell-command-dont-erase-buffer t))
+            (shell-command command log-buf))))))
     ;; Check for process failure.  Output file is expected to be
     ;; located in the same directory as SOURCE.
     (unless (org-file-newer-than-p output time)

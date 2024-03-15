@@ -1,9 +1,8 @@
 ;;; ox-md.el --- Markdown Backend for Org Export Engine -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2012-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou@gmail.com>
-;; Maintainer: Nicolas Goaziou <mail@nicolasgoaziou.fr>
 ;; Keywords: org, wp, markdown
 
 ;; This file is part of GNU Emacs.
@@ -152,8 +151,8 @@ headings for its own use."
 TREE is the parse tree being exported.  BACKEND is the export
 backend used.  INFO is a plist used as a communication channel.
 
-Enforce a blank line between elements.  There are two exceptions
-to this rule:
+Enforce a blank line between elements.  There are exceptions to this
+rule:
 
   1. Preserve blank lines between sibling items in a plain list,
 
@@ -161,8 +160,12 @@ to this rule:
      paragraph and the next sub-list when the latter ends the
      current item.
 
+  3. Do not add blank lines after table rows.  (This is irrelevant for
+     md exporter, but may surprise derived backends).
+
 Assume BACKEND is `md'."
-  (org-element-map tree (remq 'item org-element-all-elements)
+  (org-element-map tree
+      (remq 'table-row (remq 'item org-element-all-elements))
     (lambda (e)
       (org-element-put-property
        e :post-blank
@@ -305,7 +308,7 @@ INFO is a plist used as a communication channel."
          (section-title (org-html--translate "Footnotes" info)))
     (when fn-alist
       (format (plist-get info :md-footnotes-section)
-              (org-md--headline-title headline-style 1 section-title)
+              (org-md--headline-title headline-style (plist-get info :md-toplevel-hlevel) section-title)
               (mapconcat (lambda (fn) (org-md--footnote-formatted fn info))
                          fn-alist
                          "\n")))))
@@ -541,11 +544,9 @@ INFO is a plist holding contextual information.  See
 	 (type (org-element-property :type link))
 	 (raw-path (org-element-property :path link))
 	 (path (cond
-		((member type '("http" "https" "ftp" "mailto"))
-		 (concat type ":" raw-path))
 		((string-equal  type "file")
 		 (org-export-file-uri (funcall link-org-files-as-md raw-path)))
-		(t raw-path))))
+		(t (concat type ":" raw-path)))))
     (cond
      ;; Link type is handled by a special function.
      ((org-export-custom-protocol-maybe link desc 'md info))

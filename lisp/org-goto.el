@@ -1,6 +1,6 @@
 ;;; org-goto.el --- Fast navigation in an Org buffer  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2012-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -102,7 +102,11 @@ When nil, you can use these keybindings to navigate the buffer:
 					mouse-drag-region universal-argument org-occur)))
 	    (dolist (cmd cmds)
 	      (substitute-key-definition cmd cmd map global-map)))
-	  (suppress-keymap map)
+	  (if org-goto-auto-isearch
+              ;; Suppress 0-9 interpreted as digital arguments.
+              ;; Make them initiate isearch instead.
+              (suppress-keymap map t)
+            (suppress-keymap map))
 	  (org-defkey map "\C-m"     'org-goto-ret)
 	  (org-defkey map [(return)] 'org-goto-ret)
 	  (org-defkey map [(left)]   'org-goto-left)

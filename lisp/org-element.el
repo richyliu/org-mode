@@ -1,8 +1,9 @@
 ;;; org-element.el --- Parser for Org Syntax         -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2012-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou at gmail dot com>
+;; Maintainer: Ihor Radchenko <yantar92 at posteo dot net>
 ;; Keywords: outlines, hypermedia, calendar, wp
 
 ;; This file is part of GNU Emacs.
@@ -77,7 +78,7 @@
 
 (declare-function org-at-heading-p "org" (&optional _))
 (declare-function org-escape-code-in-string "org-src" (s))
-(declare-function org-src-preserve-indentation-p "org-src" (node))
+(declare-function org-src-preserve-indentation-p "org-src" (&optional node))
 (declare-function org-macro-escape-arguments "org-macro" (&rest args))
 (declare-function org-macro-extract-arguments "org-macro" (s))
 (declare-function org-reduced-level "org" (l))
@@ -412,10 +413,14 @@ Don't modify it, set `org-element-affiliated-keywords' instead.")
 			     subscript superscript underline verbatim))
 	 (standard-set
 	  (remq 'citation-reference (remq 'table-cell org-element-all-objects)))
-	 (standard-set-no-line-break (remq 'line-break standard-set)))
+	 (standard-set-no-line-break (remq 'line-break standard-set))
+         (standard-set-for-citations (seq-difference
+                                      standard-set-no-line-break
+                                      '( citation citation-reference
+                                         footnote-reference link))))
     `((bold ,@standard-set)
       (citation citation-reference)
-      (citation-reference ,@minimal-set)
+      (citation-reference ,@standard-set-for-citations)
       (footnote-reference ,@standard-set)
       (headline ,@standard-set-no-line-break)
       (inlinetask ,@standard-set-no-line-break)
@@ -546,6 +551,8 @@ The resulting function can be evaluated at a later time, from
 another buffer, effectively cloning the original buffer there.
 
 The function assumes BUFFER's major mode is `org-mode'."
+  (declare-function org-fold-core--update-buffer-folds "org-fold-core" ())
+  (require 'org-fold-core)
   (with-current-buffer buffer
     (let ((str (unless drop-contents (org-with-wide-buffer (buffer-string))))
           (narrowing
@@ -587,7 +594,7 @@ The function assumes BUFFER's major mode is `org-mode'."
 	         (let ((invis-prop (overlay-get ov 'invisible)))
 		   (when invis-prop
 		     (push (list (overlay-start ov) (overlay-end ov)
-			         invis-prop)
+			         (overlay-properties ov))
 			   ov-set))))
 	       ov-set))))
       (lambda ()
@@ -613,8 +620,12 @@ The function assumes BUFFER's major mode is `org-mode'."
 	  ;; Current position of point.
 	  (goto-char pos)
 	  ;; Overlays with invisible property.
-	  (pcase-dolist (`(,start ,end ,invis) ols)
-	    (overlay-put (make-overlay start end) 'invisible invis))
+	  (pcase-dolist (`(,start ,end ,props) ols)
+            (let ((ov (make-overlay start end)))
+              (while props
+                (overlay-put ov (pop props) (pop props)))))
+          ;; Text property folds.
+          (unless drop-visibility (org-fold-core--update-buffer-folds))
           ;; Never write the buffer copy to disk, despite
           ;; `buffer-file-name' not being nil.
           (setq write-contents-functions (list (lambda (&rest _) t))))))))
@@ -669,6 +680,8 @@ Optional keys can modify what is being copied and the generated buffer
 copy.  TO-BUFFER, DROP-VISIBILITY, DROP-NARROWING, DROP-CONTENTS, and
 DROP-LOCALS are passed as arguments to `org-element-copy-buffer'."
   (declare (debug t))
+  ;; Drop keyword arguments from BODY.
+  (while (keywordp (car body)) (pop body) (pop body))
   (org-with-gensyms (buf-copy)
     `(let ((,buf-copy (org-element-copy-buffer
                        :to-buffer ,to-buffer
@@ -1987,12 +2000,20 @@ Assume point is at the beginning of the list."
 (defun org-element-plain-list-interpreter (_ contents)
   "Interpret plain-list element as Org syntax.
 CONTENTS is the contents of the element."
-  (with-temp-buffer
-    (org-mode)
-    (insert contents)
-    (goto-char (point-min))
-    (org-list-repair)
-    (buffer-string)))
+  (org-element-with-buffer-copy
+   :to-buffer (org-get-buffer-create " *Org parse*" t)
+   :drop-contents t
+   :drop-visibility t
+   :drop-narrowing t
+   :drop-locals nil
+   ;; Transferring local variables may put the temporary buffer
+   ;; into a read-only state.  Make sure we can insert CONTENTS.
+   (let ((inhibit-read-only t)) (erase-buffer) (insert contents))
+   (goto-char (point-min))
+   (org-list-repair)
+   ;; Prevent "Buffer *temp* modified; kill anyway?".
+   (restore-buffer-modified-p nil)
+   (buffer-string)))
 
 
 ;;;; Property Drawer
@@ -2856,6 +2877,7 @@ Assume point is at the beginning of the paragraph."
 				(progn (forward-line 0) t))))
 		       ((looking-at-p org-element-drawer-re)
 			(save-excursion
+                          (forward-line 1)
 			  (re-search-forward "^[ \t]*:END:[ \t]*$" limit t)))
 		       ((looking-at "[ \t]*#\\+BEGIN_\\(\\S-+\\)")
 			(save-excursion
@@ -3812,20 +3834,23 @@ Assume point is at the beginning of the line break."
   "Parse link at point, if any.
 
 When at a link, return a new syntax node of `link' type containing
-`:type', `:path', `:format', `:raw-link', `:application',
-`:search-option', `:begin', `:end', `:contents-begin', `:contents-end'
-and `:post-blank' as properties.  Otherwise, return nil.
+`:type', `:type-explicit-p', `:path', `:format', `:raw-link',
+`:application', `:search-option', `:begin', `:end', `:contents-begin',
+`:contents-end' and `:post-blank' as properties.  Otherwise, return nil.
 
 Assume point is at the beginning of the link."
   (catch 'no-object
     (let ((begin (point))
 	  end contents-begin contents-end link-end post-blank path type format
-	  raw-link search-option application)
+	  raw-link search-option application
+          (explicit-type-p nil))
       (cond
        ;; Type 1: Text targeted from a radio target.
        ((and org-target-link-regexp
 	     (save-excursion (or (bolp) (backward-char))
-			     (looking-at org-target-link-regexp)))
+                             (if org-target-link-regexps
+                                 (org--re-list-looking-at org-target-link-regexps)
+                               (looking-at org-target-link-regexp))))
 	(setq type "radio")
 	(setq format 'plain)
 	(setq link-end (match-end 1))
@@ -3866,6 +3891,7 @@ Assume point is at the beginning of the link."
 	 ;; Explicit type (http, irc, bbdb...).
 	 ((string-match org-link-types-re raw-link)
 	  (setq type (match-string-no-properties 1 raw-link))
+          (setq explicit-type-p t)
 	  (setq path (substring raw-link (match-end 0))))
 	 ;; Code-ref type: PATH is the name of the reference.
 	 ((and (string-match-p "\\`(" raw-link)
@@ -3887,6 +3913,7 @@ Assume point is at the beginning of the link."
 	(setq format 'plain)
 	(setq raw-link (match-string-no-properties 0))
 	(setq type (match-string-no-properties 1))
+        (setq explicit-type-p t)
 	(setq link-end (match-end 0))
 	(setq path (match-string-no-properties 2)))
        ;; Type 4: Angular link, e.g., <https://orgmode.org>.  Unlike to
@@ -3895,6 +3922,7 @@ Assume point is at the beginning of the link."
        ((looking-at org-link-angle-re)
 	(setq format 'angle)
 	(setq type (match-string-no-properties 1))
+        (setq explicit-type-p t)
 	(setq link-end (match-end 0))
 	(setq raw-link
 	      (buffer-substring-no-properties
@@ -3922,10 +3950,12 @@ Assume point is at the beginning of the link."
 			(funcall org-link-translation-function type path))))
 	(when trans
 	  (setq type (car trans))
+          (setq explicit-type-p t)
 	  (setq path (cdr trans))))
       (org-element-create
        'link
        (list :type (org-element--get-cached-string type)
+             :type-explicit-p explicit-type-p
 	     :path path
 	     :format format
 	     :raw-link (or raw-link path)
@@ -3969,8 +3999,11 @@ CONTENTS is the contents of the object, or nil."
 		  ("custom-id" (concat "#" path))
 		  ("file"
 		   (let ((app (org-element-property :application link))
-			 (opt (org-element-property :search-option link)))
-		     (concat type (and app (concat "+" app)) ":"
+			 (opt (org-element-property :search-option link))
+                         (type-explicit-p (org-element-property :type-explicit-p link)))
+		     (concat (and type-explicit-p type)
+                             (and type-explicit-p app (concat "+" app))
+                             (and type-explicit-p ":")
 			     path
 			     (and opt (concat "::" opt)))))
 		  ("fuzzy" path)
@@ -5190,7 +5223,10 @@ to an appropriate container (e.g., a paragraph)."
 		       ((not (memq 'link restriction)) nil)
 		       ((progn
 		          (unless (bolp) (forward-char -1))
-		          (not (re-search-forward org-target-link-regexp nil t)))
+		          (not
+                           (if org-target-link-regexps
+                               (org--re-list-search-forward org-target-link-regexps nil t)
+                             (re-search-forward org-target-link-regexp nil t))))
 		        nil)
 		       ;; Since we moved backward, we do not want to
 		       ;; match again an hypothetical 1-character long
@@ -5199,8 +5235,11 @@ to an appropriate container (e.g., a paragraph)."
 		       ;; beginning of line, we prevent this here.
 		       ((and (= start (1+ (line-beginning-position)))
 			     (= start (match-end 1)))
-		        (and (re-search-forward org-target-link-regexp nil t)
-			     (1+ (match-beginning 1))))
+		        (and
+                         (if org-target-link-regexps
+                             (org--re-list-search-forward org-target-link-regexps nil t)
+                           (re-search-forward org-target-link-regexp nil t))
+			 (1+ (match-beginning 1))))
 		       (t (1+ (match-beginning 1))))))
 	      found)
          (save-excursion
@@ -5650,7 +5689,7 @@ indentation removed from its contents."
 (defvar org-element-cache-persistent t
   "Non-nil when cache should persist between Emacs sessions.")
 
-(defconst org-element-cache-version "2.2"
+(defconst org-element-cache-version "2.3"
   "Version number for Org AST structure.
 Used to avoid loading obsolete AST representation when using
 `org-element-cache-persistent'.")
@@ -5890,6 +5929,7 @@ FORMAT-STRING and ARGS are the same arguments as in `format'."
                (setq org-element--cache-diagnostics-ring nil)))))
      (if (and (boundp 'org-batch-test) org-batch-test)
          (error "%s" (concat "org-element--cache: " format-string))
+       (push (concat "org-element--cache: " format-string) org--warnings)
        (display-warning '(org-element org-element-cache)
                         (concat "org-element--cache: " format-string)))))
 
@@ -6285,7 +6325,8 @@ Properties are modified by side-effect."
   ;; Shift `:structure' property for the first plain list only: it
   ;; is the only one that really matters and it prevents from
   ;; shifting it more than once.
-  (when (and (or (not props) (memq :structure props))
+  (when (and (not (zerop offset))
+             (or (not props) (memq :structure props))
              (org-element-type-p element 'plain-list)
              (not (org-element-type-p
                  ;; Cached elements cannot have deferred `:parent'.
@@ -6295,25 +6336,28 @@ Properties are modified by side-effect."
       (dolist (item structure)
         (cl-incf (car item) offset)
         (cl-incf (nth 6 item) offset))))
+  ;; Clear :fragile cache when contents is changed.
+  (when props (org-element-put-property element :fragile-cache nil))
   ;; Do not use loop for inline expansion to work during compile time.
-  (when (or (not props) (memq :begin props))
-    (cl-incf (org-element-begin element) offset))
-  (when (or (not props) (memq :end props))
-    (cl-incf (org-element-end element) offset))
-  (when (or (not props) (memq :post-affiliated props))
-    (cl-incf (org-element-post-affiliated element) offset))
-  (when (and (or (not props) (memq :contents-begin props))
-             (org-element-contents-begin element))
-    (cl-incf (org-element-contents-begin element) offset))
-  (when (and (or (not props) (memq :contents-end props))
-             (org-element-contents-end element))
-    (cl-incf (org-element-contents-end element) offset))
-  (when (and (or (not props) (memq :robust-begin props))
-             (org-element-property :robust-begin element))
-    (cl-incf (org-element-property :robust-begin element) offset))
-  (when (and (or (not props) (memq :robust-end props))
-             (org-element-property :robust-end element))
-    (cl-incf (org-element-property :robust-end element) offset)))
+  (unless (zerop offset)
+    (when (or (not props) (memq :begin props))
+      (cl-incf (org-element-begin element) offset))
+    (when (or (not props) (memq :end props))
+      (cl-incf (org-element-end element) offset))
+    (when (or (not props) (memq :post-affiliated props))
+      (cl-incf (org-element-post-affiliated element) offset))
+    (when (and (or (not props) (memq :contents-begin props))
+               (org-element-contents-begin element))
+      (cl-incf (org-element-contents-begin element) offset))
+    (when (and (or (not props) (memq :contents-end props))
+               (org-element-contents-end element))
+      (cl-incf (org-element-contents-end element) offset))
+    (when (and (or (not props) (memq :robust-begin props))
+               (org-element-property :robust-begin element))
+      (cl-incf (org-element-property :robust-begin element) offset))
+    (when (and (or (not props) (memq :robust-end props))
+               (org-element-property :robust-end element))
+      (cl-incf (org-element-property :robust-end element) offset))))
 
 (defvar org-element--cache-interrupt-C-g t
   "When non-nil, allow the user to abort `org-element--cache-sync'.
@@ -6695,13 +6739,12 @@ completing the request."
                   (setf (org-element--request-parent request) parent)
                   (throw 'org-element--cache-interrupt nil))
 	        ;; Shift element.
-	        (unless (zerop offset)
-                  (when (>= org-element--cache-diagnostics-level 3)
-                    (org-element--cache-log-message "Shifting positions (𝝙%S) in %S::%S"
-                                                    offset
-                                                    (org-element-property :org-element--cache-sync-key data)
-                                                    (org-element--format-element data)))
-		  (org-element--cache-shift-positions data offset))
+                (when (>= org-element--cache-diagnostics-level 3)
+                  (org-element--cache-log-message "Shifting positions (𝝙%S) in %S::%S"
+                                                  offset
+                                                  (org-element-property :org-element--cache-sync-key data)
+                                                  (org-element--format-element data)))
+		(org-element--cache-shift-positions data offset)
 	        (let ((begin (org-element-begin data)))
 		  ;; Update PARENT and re-parent DATA, only when
 		  ;; necessary.  Propagate new structures for lists.
@@ -6929,7 +6972,7 @@ the expected result."
                  (error "org-element: Parsing aborted by user.  Cache has been cleared.
 If you observe Emacs hangs frequently, please report this to Org mode mailing list (M-x org-submit-bug-report)"))
                (message (substitute-command-keys
-                         "`org-element--parse-buffer': Suppressed `\\[keyboard-quit]'.  Press `\\[keyboard-quit]' %d more times to force interruption.")
+                         "`org-element--parse-to': Suppressed `\\[keyboard-quit]'.  Press `\\[keyboard-quit]' %d more times to force interruption.")
                         (- org-element--cache-interrupt-C-g-max-count
                            org-element--cache-interrupt-C-g-count)))
 	     (unless element
@@ -7743,6 +7786,45 @@ the cache persistence in the buffer."
                   #'org-element--cache-setup-change-functions)))))
 
 ;;;###autoload
+(defun org-element-cache-store-key (epom key value &optional robust)
+  "Store KEY with VALUE associated with EPOM - point, marker, or element.
+The key can be retrieved as long as the element (provided or at point)
+contents is not modified.
+If optional argument ROBUST is non-nil, the key will be retained even
+when the contents (children) of current element are modified.  Only
+non-robust element modifications (affecting the element properties
+other then begin/end boundaries) will invalidate the key then."
+  (let ((element (org-element-at-point epom))
+        (property (if robust :robust-cache :fragile-cache)))
+    (let ((key-store (org-element-property property element)))
+      (unless (hash-table-p key-store)
+        (setq key-store (make-hash-table :test #'equal))
+        (org-element-put-property element property key-store))
+      (puthash key value key-store))))
+
+;;;###autoload
+(defun org-element-cache-get-key (epom key &optional default)
+  "Get KEY associated with EPOM - point, marker, or element.
+Return DEFAULT when KEY is not associated with EPOM.
+The key can be retrieved as long as the element (provided or at point)
+contents is not modified."
+  (let ((element (org-element-at-point epom)))
+    (let ((key-store1 (org-element-property :fragile-cache element))
+          (key-store2 (org-element-property :robust-cache element)))
+      (let ((val1 (if (hash-table-p key-store1)
+                      (gethash key key-store1 'not-found)
+                    'not-found))
+            (val2 (if (hash-table-p key-store2)
+                      (gethash key key-store2 'not-found)
+                    'not-found)))
+        (cond
+         ((and (eq 'not-found val1)
+               (eq 'not-found val2))
+          default)
+         ((eq 'not-found val1) val2)
+         ((eq 'not-found val2) val1))))))
+
+;;;###autoload
 (defun org-element-cache-refresh (pos)
   "Refresh cache at position POS."
   (when (org-element--cache-active-p)
@@ -7924,10 +8006,10 @@ the cache."
                                           (if org-element--cache-map-statistics
                                               (progn
                                                 (setq before-time (float-time))
-                                                (re-search-forward (or (car-safe ,re) ,re) nil 'move)
-                                                (cl-incf re-search-time
-                                                         (- (float-time)
-                                                            before-time)))
+                                                (prog1 (re-search-forward (or (car-safe ,re) ,re) nil 'move)
+                                                  (cl-incf re-search-time
+                                                           (- (float-time)
+                                                              before-time))))
                                             (re-search-forward (or (car-safe ,re) ,re) nil 'move)))
                                       (unless (or (< (point) (or start -1))
                                                   (and data
@@ -8111,22 +8193,21 @@ the cache."
                               (move-start-to-next-match
                                (if last-match next-re fail-re)))
                             (when (and (or (not start) (eq (org-element-begin data) start))
-                                       (< (org-element-begin data) to-pos))
+                                       (< (org-element-begin data) to-pos)
+                                       (not continue-flag))
                               ;; Calculate where next possible element
                               ;; starts and update START if needed.
 		              (setq start (next-element-start))
                               (goto-char start)
                               ;; Move START further if possible.
-                              (when (and next-element-re
-                                         ;; Do not move if we know for
-                                         ;; sure that cache does not
-                                         ;; contain gaps.  Regexp
-                                         ;; searches are not cheap.
-                                         (not (cache-gapless-p)))
-                                (move-start-to-next-match next-element-re)
-                                ;; Make sure that point is at START
-                                ;; before running FUNC.
-                                (goto-char start))
+                              (save-excursion
+                                (when (and next-element-re
+                                           ;; Do not move if we know for
+                                           ;; sure that cache does not
+                                           ;; contain gaps.  Regexp
+                                           ;; searches are not cheap.
+                                           (not (cache-gapless-p)))
+                                  (move-start-to-next-match next-element-re)))
                               ;; Try FUNC if DATA matches all the
                               ;; restrictions.  Calculate new START.
                               (when (or (not restrict-elements)

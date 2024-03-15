@@ -6,18 +6,213 @@ ORG NEWS -- history of user-visible changes.   -*- mode: org; coding: utf-8 -*-
 #+LINK: msg https://list.orgmode.org/%s/
 #+LINK: git https://git.savannah.gnu.org/cgit/emacs/org-mode.git/commit/?id=%s
 
-Copyright (C) 2012-2023 Free Software Foundation, Inc.
+Copyright (C) 2012-2024 Free Software Foundation, Inc.
 See the end of the file for license conditions.
 
 Please send Org bug reports to mailto:emacs-orgmode@gnu.org.
 
 * Version 9.7 (not released yet)
 ** Important announcements and breaking changes
-*** ~org-src-associate-babel-session~ and ~org-babel-<lang>-associate-session~ are now obsolete
+*** Built-in HTML, LaTeX, Man, Markdown, ODT, and Texinfo exporters preserve the link protocol during export
 
-This functionality is not documented, rarely used and can be achieved
-via ~org-babel-edit-prep-<lang>~ function.  The latter is the
-new recommended way to setup session in Org src buffers.
+Previously, some link types where not exported as =protocol:uri= but
+as bare =uri=. This is now changed.
+
+When a link is known by Org mode and does not have a custom ~:export~
+parameter (see A.3 Adding Hyperlink Types section of the manual), the
+link protocol is now not stripped.
+
+For example, if one adds a link type =tel=, but does not define
+~:export~ parameter
+: (org-link-set-parameters "tel")
+=[[tel:12345][John Doe]]= link will be correctly exported to LaTeX as
+=\href{tel:12345}{John Doe}=, not =\href{12345}{John Doe}=.
+
+However, links like =[[elisp:(+ 1 2)]]= will be exported as
+=\url{elisp:(+ 1 2)}=, which may be somewhat unexpected.
+
+*** When ~org-link-file-path-type~ is a function, its argument is now a filename as it is read by ~org-insert-link~; not an absolute path
+
+Previously, when ~org-link-file-path-type~ is set to a function, the
+function argument was the filename from the link expanded via
+~expand-file-name~.  Now, a bare filename is passed to the function.
+
+*** Org export backends can now disable citation processors
+
+A new global export option ~:with-cite-processors~, when set to nil,
+disables citation processors completely.  This option is available to
+export backends via ~:options-alist~ when defining the backend.
+
+The backends disabling citation processors must take care about
+exporting citation objects and =print_bibliography= keywords via
+transcoders.
+
+Users can disable citations processors by customizing new
+~org-export-process-citations~ option.
+
+*** =ox-org= disables citation processors by default
+
+Previously, when exporting to Org, all the citations and
+=print_bibliography= keywords, were transformed according to the
+chosen citation processor.
+
+This is no loner the case.  All the citation-related markup is now
+exported as is.
+
+The previous behavior can be reverted by setting new custom option
+~org-org-with-cite-processors~.
+
+*** =ox-org= now exports special table rows by default
+
+Previously, when exporting to Org, special table rows (for example,
+width cookies) were not exported.   Now, they are exported by default.
+
+You can customize new option ~org-org-with-special-rows~ to fall back to previous behavior.
+
+*** Org babel backends are now expected to define an additional API function ~org-babel-session-buffer:<lang>~
+
+Org babel now uses session buffer (if it exists) to retrieve
+~default-directory~ environment during src block evaluation.
+
+By default, buffer named like session is checked.  All the backends
+that create sessions inside buffers named differently should provide a
+function ~org-babel-session-buffer:<lang>~.  The function must accept
+two arguments - session name and info list (as returned by
+~org-babel-get-src-block-info~); and return the session buffer name.
+
+*** ~org-insert-subheading~ no longer inserts a sub-heading above current when point is at the beginning of line
+
+Previously, calling ~org-insert-subheading~ on
+
+: * Heading 1
+: <point>* Heading 2
+
+yielded
+
+: * Heading 1
+: ** <point>
+: * Heading 2
+
+This is no longer the case.  The sub-heading is always created below
+current heading (prefix arguments have the same meaning as in
+~org-insert-heading~):
+
+: * Heading 1
+: * Heading 2
+: ** <point>
+
+*** Org mode now fontifies whole table lines (including newline) according to ~org-table~ face
+
+Previously, leading indentation and trailing newline in table rows
+were not fontified using ~org-table~ face.  ~default~ face was used instead.
+This made it impossible to scale line height when ~org-table~ face has
+smaller height than default (Emacs calculates line height using the tallest face).
+
+Now, new ~org-table-row~ face is used on the whole table row lines,
+including indentation and the final newline. This face, by default,
+inherits from ~org-table~ face.
+
+If the new behavior is not desired, ~org-table-row~ face can be
+changed to inherit from ~default~ face.
+
+~org-table~ takes precedence over ~org-table-row~ for the parts of
+table rows without indentation and newline.
+
+*** =ox-latex=: ~org-latex-line-break-safe~ is deprecated
+
+~org-latex-line-break-safe~ constant was previously introduced to deal
+with edge cases when LaTeX interprets [...] as LaTeX command
+argument.  However, it caused a number of other issues and proved
+itself not to be as "safe" as it supposed to be.
+
+We now use a Pandoc's approach to deal with the same problem,
+utilizing ={[}= to escape =[...]= instances where needed.
+
+*** ob-python now sets ~python-shell-buffer-name~ in Org edit buffers
+
+When editing a Python src block, the editing buffer is now associated
+with the Python shell specified by the src block's ~:session~ header,
+which means users can now send code directly from the edit buffer,
+e.g., using ~C-c C-c~, to the session specified in the Org buffer.
+
+*** ~org-edit-special~ no longer force-starts session in R and Julia source blocks
+
+Previously, when R/Julia source block had =:session= header argument
+set to a session name with "earmuffs" (like =*session-name*=),
+~org-edit-special~ always started a session, if it does not exist.
+
+Now, ~org-edit-special~ arranges that a new session with correct name
+is initiated only when user explicitly executes R/Julia-mode commands
+that trigger session interactions (requires ESS 24.01.0 or newer).
+The same session will remain available in the context of Org babel.
+
+*** It is no longer allowed to tangle into the same file as Org source
+
+Previously, =file.org= with the following contents
+
+: #+begin_src org :tangle file.org
+: Text
+: #+end_src
+
+would overwrite itself.
+
+Now, an error is thrown.
+
+*** iCalendar export now supports multiline =SUMMARY=, =LOCATION=, and =DESCRIPTION= properties
+
+Previously, it was not possible to specify multi-line location,
+summary, or description when exporting to iCalendar.
+
+In the following example, =LOCATION= was exported as "Someplace",
+ignoring the other lines.
+
+#+begin_src org
+,* heading with multi-line property
+:PROPERTIES:
+:LOCATION: Someplace
+:LOCATION+: Some Street 5
+:LOCATION+: 12345 Small Town
+:END:
+#+end_src
+
+Now, =SUMMARY+=, =LOCATION+=, and =DESCRIPTION+= properties can be
+used to create multi-line values.
+
+In the above example, =LOCATION= is now exported as
+
+: Someplace
+: Some Street 5
+: 12345 Small Town
+
+*** Org mode no longer disallows configuring ~display-buffer-alist~ to open Org popups in other frame
+
+Previously, Org mode disallowed pop-up frames when displaying dispatch buffers.
+This is no longer the case. ~display-buffer-alist~ is fully obeyed.
+
+~org-switch-to-buffer-other-window~ and ~org-no-popups~ are now deprecated.
+
+*** Folded lines can now extend their face beyond ellipsis
+
+Previously, ~:extend t~ face attribute did not make folded headlines,
+blocks, and drawers extend their face beyond end of line.
+
+Now, the ellipsis and trailing newline use the same face as the last
+character before the fold.
+
+*** ~org-agenda-search-headline-for-time~ now ignores all the timestamp in headings
+
+Previously, ~org-agenda-search-headline-for-time~ made Org agenda
+match anything resembling time inside headings.  Even when the time
+was a part of a timestamp.
+
+Now, all the timestamps in headings are ignored when searching the time.
+
+*** ODT export no longer opens the exported file in the background
+
+ODT exporter used to open the exported file in ~archive-mode~ "for
+examination".  This was not documented, was done in the background,
+and is not consistent with all other export backends. Now, this
+feature is removed.
 
 *** ~org-print-speed-command~ is now an internal function
 
@@ -283,6 +478,14 @@ timestamp object.  Possible values: ~timerange~, ~daterange~, ~nil~.
 ~org-element-timestamp-interpreter~ takes into account this property
 and returns an appropriate timestamp string.
 
+**** =org-link= store functions are passed an ~interactive?~ argument
+
+The ~:store:~ functions set for link types using
+~org-link-set-parameters~ are now passed an ~interactive?~ argument,
+indicating whether ~org-store-link~ was called interactively.
+
+Existing store functions will continue to work.
+
 *** ~org-priority=show~ command no longer adjusts for scheduled/deadline
 
 In agenda views, ~org-priority=show~ command previously displayed the
@@ -361,7 +564,136 @@ The change is breaking when ~org-use-property-inheritance~ is set to ~t~.
 *** ~org-babel-lilypond-compile-lilyfile~ ignores optional second argument
 
 The =TEST= parameter is better served by Emacs debugging tools.
+
+*** =id:= links support search options; ~org-id-store-link~ adds search option by default
+
+Adding search option by ~org-id-store-link~ can be disabled by setting
+~org-id-link-use-context~ to ~nil~, or toggled for a single call by
+passing universal argument.
+
+When using this feature, IDs should not include =::=, which is used in
+links to indicate the start of the search string.  For backwards
+compability, existing IDs including =::= will still be matched (but
+cannot be used together with search option).  A new org-lint checker
+has been added to warn about this.
+
+*** ~org-store-link~ behaviour storing additional =CUSTOM_ID= links has changed
+
+Previously, when storing =id:= link, ~org-store-link~ stored an
+additional "human readable" link using a node's =CUSTOM_ID= property.
+
+This behaviour has been expanded to store an additional =CUSTOM_ID=
+link when storing any type of external link type in an Org file, not
+just =id:= links.
+
 ** New and changed options
+*** New option ~org-beamer-frame-environment~
+
+The new option defines name of an alternative environment to be used
+for fragile beamer frames.  This option is needed to work around
+beamer bug with frame contents containing literal =\end{frame}= string
+(for example, inside example blocks).  See
+https://github.com/josephwright/beamer/issues/360
+
+The default value is =orgframe=.
+
+The option should normally not be changed, except when you need to put
+=\end{orgframe}= string inside beamer frames.
+
+A checker has been added to =M-x org-lint= to detect instances of
+~org-beamer-frame-environment~ in Org documents.
+
+*** New option ~org-export-process-citations~
+
+The new option controls whether to use citation processors to process
+citations.
+
+*** New option ~org-org-with-cite-processors~
+
+The new option controls whether to use citation processors to process
+citations when exporting to Org.
+
+*** New option ~org-org-with-special-rows~
+
+The new options controls whether to export special table rows in
+Org-Org (=ox-org=) export.  The default value is ~t~.
+
+*** New option ~org-babel-comint-fallback-regexp-threshold~
+
+Org babel is often using Emacs' interactive REPL feature to implement
+:session functionality in code blocks. However, Emacs' REPLs use
+heuristics to detect which lines in the REPL buffer correspond to
+output and which lines are user prompts.
+
+Normally, Org babel changes the default prompt to something unique. It
+avoids incorrect detection of code block output.
+
+Sometimes, the Org-configured prompt is changed manually by users or
+when running a sub-REPL (for example, when running ssh/python
+interpreter inside shell).
+
+The new option controls Org mode's heuristics for catching
+user-changed prompt in interactive Org babel sessions.  When Org mode
+cannot find REPL's prompt for more than
+~org-babel-comint-fallback-regexp-threshold~ seconds, imprecise
+generic prompt is tried to detect whether the code block output has
+arrived.
+
+Users who often work with altering REPL prompts may consider reducing
+the default 5 second value of the new option.
+
+*** ~repeated-after-deadline~ value of ~org-agenda-skip-scheduled-repeats-after-deadline~ is moved to a new customization
+
+A new custom option ~org-agenda-skip-scheduled-repeats-after-deadline~
+is introduced in place of ~repeated-after-deadline~ value of
+~org-agenda-skip-scheduled-repeats-after-deadline~.
+
+Introducing a new option allow more control over agenda display and
+resolves a confusion about the meaning of ~repeated-after-deadline~.
+~repeated-after-deadline~ has nothing to do with /showing/ deadline.
+It just prevents agenda display repeated scheduled entries past
+deadline. The following example illustrates the meaning:
+
+: * TODO Do me every day before Jan, 12th (included)
+: SCHEDULED: <2024-01-03 Wed +1d> DEADLINE: <2024-01-05 Fri>
+
+The old customization will continue to work, ensuring backwards compatibility.
+
+*** New custom setting ~org-icalendar-ttl~ for the ~ox-icalendar~ backend
+
+The option ~org-icalendar-ttl~ allows to advise a subscriber to the
+exported =.ics= file to reload after the given time interval.
+
+This is useful i.e. if a calendar server subscribes to your exported
+file and that file is updated regularly.
+
+See IETF RFC 5545, Section 3.3.6 Duration and
+https://en.wikipedia.org/wiki/ICalendar#Other_component_types for
+details.
+
+Default for ~org-icalendar-ttl~ is ~nil~.  In that case the setting
+will not be used in the exported ICS file.
+
+The option may also be set using the =ICAL-TTL= keyword.
+
+*** The default value of ~org-attach-store-link-p~ is now ~attached~
+
+Now, after attaching a file, =[[attach:...]]= link to the attached file
+is stored.  It can later be inserted using =M-x org-insert-link=.
+
+*** ~org-link-descriptive~ can now be set per-buffer via =#+STARTUP= options
+
+In addition to ~org-link-descriptive~ custom option, link display can
+now be controlled per-buffer as:
+
+: #+STARTUP: literallinks
+: #+STARTUP: descriptivelinks
+
+*** New option ~org-fast-tag-selection-maximum-tags~
+
+You can now limit the total number of tags displayed in the fast tag
+selection interface.  Useful in buffers with huge number of tags.
+
 *** New variable ~org-clock-out-removed-last-clock~
 
 The variable is intended to be used by ~org-clock-out-hook~.  It is a
@@ -544,7 +876,91 @@ Currently implemented options are:
 The capture template expansion element =%K= creates links using
 ~org-store-link~, which respects the values of ~org-id-link-to-use-id~.
 
+*** Changes to ~org-babel-python-command~, and new session/nonsession specific options
+
+The default Python command used by interactive sessions has been
+changed to match ~python-shell-interpreter~ and
+~python-shell-interpreter-args~ by default.  The default Python
+command for nonsessions has not changed.
+
+New options ~org-babel-python-command-nonsession~ and
+~org-babel-python-command-session~ control the default Python command
+for nonsessions and sessions, respectively.  By default,
+~org-babel-python-command-session~ is ~auto~, which means to use the
+configuration for ~python-shell-interpreter(-args)~ as default.
+
+The old option ~org-babel-python-command~ has been changed to have
+default value of ~auto~.  When not ~auto~, it overrides both
+~org-babel-python-command-nonsession~ and
+~org-babel-python-command-session~.  Therefore, users who had
+previously set ~org-babel-python-command~ will not experience any
+changes.
+
+Likewise, users who had neither set ~org-babel-python-command~ nor
+~python-shell-interpreter(-args)~ will not see any changes -- ~python~
+remains the default command.
+
+The main change will be for users who did not configure
+~org-babel-python-command~, but did configure
+~python-shell-interpreter~, e.g. to use IPython.  In this case,
+~ob-python~ will now start interactive sessions in a more consistent
+manner with ~run-python~.
+
+*** New hook option ~org-indent-post-buffer-init-functions~
+
+This allows to run functions after ~org-indent~ intializes a buffer to
+enrich its properties.
+*** New option ~org-agenda-start-with-archives-mode~
+
+This option starts the agenda to automatically include archives,
+propagating the value for this variable to ~org-agenda-archives-mode~.
+For acceptable values and their meaning, see the value of that variable.
+
+*** New option ~org-id-link-consider-parent-id~ to allow =id:= links to parent headlines
+
+For =id:= links, when this option is enabled, ~org-store-link~ will
+look for ids from parent/ancestor headlines, if the current headline
+does not have an id.
+
+Combined with the new ability for =id:= links to use search options
+ [fn:: when =org-id-link-use-context= is =t=, which is the default],
+this allows linking to specific headlines without requiring every
+headline to have an id property, as long as the headline is unique
+within a subtree that does have an id property.
+
+For example, given this org file:
+
+#+begin_src org
+,* Parent
+:PROPERTIES:
+:ID: abc
+:END:
+,** Child 1
+,** Child 2
+#+end_src
+
+Storing a link with point at "Child 1" will produce a link
+=<id:abc::*Child 1>=, which precisely links to the "Child 1" headline
+even though it does not have its own ID.  By giving files top-level id
+properties, links to headlines in the file can also be made more
+robust by using the file id instead of the file path.
+
 ** New features
+*** =ob-tangle.el=: New flag to remove tangle targets before writing
+
+When ~org-babel-tangle-remove-file-before-write~ is set to ~t~ the
+tangle target is removed before writing.  This will allow overwriting
+read-only tangle targets.  However, when tangle target is a symlink,
+this will convert the tangle target into an ordinary file.
+
+The default value is ~auto~ -- overwrite tangle targets when they are
+read-only.
+
+*** ~org-bibtex-yank~ accepts a prefix argument
+
+When called with a prefix argument, ~org-bibtex-yank~ adds data to the
+headline of the entry at point instead of creating a new one.
+
 *** =ob-plantuml.el=: Support tikz file format output
 
 =ob-plantuml.el= now output =tikz= :file format via
@@ -735,7 +1151,44 @@ Completion is enabled for links to man pages added using ~org-insert-link~:
 =C-c C-l man RET emacscl TAB= to get =emacsclient=.  Of course, the ~ol-man~
 library should be loaded first.
 
+*** ~org-footnote-new~ can be configured to create anonymous footnotes
+
+When ~org-footnote-auto-label~ is set to ~'anonymous~, create
+anonymous footnotes automatically with ~org-footnote-new~.
+
+The same can be done via startup options:
+: #+STARTUP: fnanon
+
+*** ox-texinfo always generates a ~@direntry~
+We use defaults based on the file name and title of the document, and
+place the entry in the ~Misc~ category if ~TEXINFO_DIR_CATEGORY~ is missing.
+
+=TEXINFO_DIR_TITLE= is renamed to =TEXINFO_DIR_NAME=.
+The old name is obsolete.
+
 ** New functions and changes in function arguments
+*** New optional argument =UPDATE-HEADING= for ~org-bibtex-yank~
+
+When the new argument is non-nil, add data to the headline of the
+entry at point.
+
+*** New API functions to store data within ~org-element-cache~
+
+Elisp programs can now store data inside Org element cache.
+
+The data will remain stored as long as the Org buffer text associated
+with the cached elements remains unchanged.
+
+Two options are available:
+ - Store the data until any text within element boundaries is changed
+ - Store the data, but ignore any changes inside element contents that
+   do not affect the high-level element structure. For example,
+   changes inside subheadings can be ignored for the data stored
+   inside parent heading element.
+
+The new functions are: ~org-element-cache-store-key~ and
+~org-element-cache-get-key~.
+
 *** ~org-fold-hide-drawer-all~ is now interactive
 
 ~org-fold-hide-drawer-all~ is now a command, accepting two optional
@@ -809,6 +1262,25 @@ as the function can also act on objects.
 
 *** ~org-export-get-parent-element~ is renamed to ~org-element-parent-element~ and moved to =lisp/org-element.el=
 
+*** ~org-insert-heading~ optional argument =TOP= is now =LEVEL=
+
+A numeric value forces a heading at that level to be inserted.  For
+backwards compatibility, non-numeric non-nil values insert level 1
+headings as before.
+
+*** New optional argument for ~org-id-get~
+
+New optional argument =INHERIT= means inherited ID properties from
+parent entries are considered when getting an entry's ID (see
+~org-id-link-consider-parent-id~ option).
+
+*** New optional argument for ~org-link-search~
+
+If a missing heading is created to match the search string, the new
+optional argument =NEW-HEADING-CONTAINER= specifies where in the
+buffer it will be added.  If not specified, new headings are created
+at level 1 at the end of the accessible part of the buffer, as before.
+
 ** Miscellaneous
 *** =org-crypt.el= now applies initial visibility settings to decrypted entries
 
@@ -847,6 +1319,12 @@ the respective functions that need this information.
 For symmetry with =\S= and =\sect= for the section symbol, =\P= has
 been added as an another form for the pilcrow symbol currently
 available as =\para=.
+
+*** ~org-table-to-lisp~ no longer clobbers the regexp global state
+
+It does no longer use regexps.
+
+It is also faster. Large tables can be read quickly.
 
 * Version 9.6
 

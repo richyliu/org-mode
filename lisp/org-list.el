@@ -1,6 +1,6 @@
 ;;; org-list.el --- Plain lists for Org              -*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 2004-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 ;;
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;;	   Bastien Guerry <bzg@gnu.org>
@@ -1152,7 +1152,7 @@ This function modifies STRUCT."
         (org-fold-core-regions (cdr folds) :relative beg-A)
         (org-fold-core-regions
          (car folds)
-         :relative (+ beg-B (- size-B size-A (length between-A-no-blank-and-B))))
+         :relative (+ beg-A size-B (length between-A-no-blank-and-B)))
         ;; 2. Now modify struct.  No need to re-read the list, the
         ;;    transformation is just a shift of positions.  Some special
         ;;    attention is required for items ending at END-A and END-B

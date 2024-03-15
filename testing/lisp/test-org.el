@@ -1980,8 +1980,30 @@ CLOCK: [2022-09-17 sam. 11:00]--[2022-09-17 sam. 11:46] =>  0:46"
 	    (let ((org-insert-heading-respect-content nil))
 	      (org-insert-heading '(16)))
 	    (buffer-string))))
-  ;; When optional TOP-LEVEL argument is non-nil, always insert
-  ;; a level 1 heading.
+  ;; When optional LEVEL argument is a number, insert a heading at
+  ;; that level.
+  (should
+   (equal "* H1\n** H2\n* "
+	  (org-test-with-temp-text "* H1\n** H2<point>"
+	    (org-insert-heading nil nil 1)
+	    (buffer-string))))
+  (should
+   (equal "* H1\n** H2\n** "
+	  (org-test-with-temp-text "* H1\n** H2<point>"
+	    (org-insert-heading nil nil 2)
+	    (buffer-string))))
+  (should
+   (equal "* H1\n** H2\n*** "
+	  (org-test-with-temp-text "* H1\n** H2<point>"
+	    (org-insert-heading nil nil 3)
+	    (buffer-string))))
+  (should
+   (equal "* H1\n- item\n* "
+	  (org-test-with-temp-text "* H1\n- item<point>"
+	    (org-insert-heading nil nil 1)
+	    (buffer-string))))
+  ;; When optional LEVEL argument is non-nil, always insert a level 1
+  ;; heading.
   (should
    (equal "* H1\n** H2\n* "
 	  (org-test-with-temp-text "* H1\n** H2<point>"
@@ -2436,6 +2458,13 @@ Test
 ** H2<point>"
     (should (= 1 (org-up-heading-safe)))
     (should (looking-at-p "^\\* H1")))
+  ;; Return true level.  Ignore `org-odd-levels-only'.
+  (let ((org-odd-levels-only t))
+    (org-test-with-temp-text "
+*** H1
+***** H2<point>"
+      (should (= 3 (org-up-heading-safe)))
+      (should (looking-at-p "^\\*\\{3\\} H1"))))
   ;; Do not jump beyond the level 1 heading.
   (org-test-with-temp-text "
 Text.
@@ -2780,7 +2809,16 @@ test <point>
      (org-get-outline-path)))
   (should
    (org-test-with-temp-text "* \n** H<point>"
-     (org-get-outline-path))))
+     (org-get-outline-path)))
+  ;; Remove COMMENTED keywords.
+  (should
+   (equal '("This" "is")
+          (org-test-with-temp-text
+              "* COMMENT This
+** COMMENT is
+*** test<point>
+"
+            (org-get-outline-path)))))
 
 (ert-deftest test-org/format-outline-path ()
   "Test `org-format-outline-path' specifications."
@@ -2846,7 +2884,7 @@ test <point>
     (should (org-find-olp '("Headline" "headline8") t))))
 
 (ert-deftest test-org/map-entries ()
-  "Test `org-map-entries' specifications."
+  "Test `org-map-entries' and `org-element-cache-map' specifications."
   (dolist (org-element-use-cache '(t nil))
     ;; Full match.
     (should
@@ -3088,7 +3126,16 @@ Let’s stop here
          (lambda ()
            (delete-region (point) (line-beginning-position 2))
            (setq org-map-continue-from (point))))
-        (buffer-string))))))
+        (buffer-string))))
+    ;; :next-re in `org-element-cache-map'
+    (org-test-with-temp-text
+        "* one
+* TODO two
+* three
+* four
+"
+      (should (equal '("two")
+                     (org-element-cache-map (lambda (el) (org-element-property :title el)) :next-re "TODO"))))))
 
 (ert-deftest test-org/edit-headline ()
   "Test `org-edit-headline' specifications."
@@ -3300,7 +3347,7 @@ Let’s stop here
       (list org-priority-highest org-priority-lowest org-priority-default))))
   ;; STARTUP keyword.
   (should
-   (equal '(t t)
+   (equal '(fold t)
 	  (org-test-with-temp-text "#+STARTUP: fold odd"
 	    (org-mode-restart)
 	    (list org-startup-folded org-odd-levels-only))))
@@ -3916,7 +3963,25 @@ SCHEDULED: <2017-05-06 Sat>
 	  (org-test-with-temp-text
 	      "\n* B\n* A\n# Local Variables:\n# foo: t\n# End:"
 	    (org-sort-entries nil ?a)
-	    (buffer-string)))))
+	    (buffer-string))))
+  ;; Sort region
+  (should
+   (equal "
+* [#A] h2
+* [#B] h3
+* [#C] h1
+"
+	  (org-test-with-temp-text
+	      "
+<point>* [#C] h1
+* [#A] h2
+* [#B] h3"
+            (transient-mark-mode 1)
+            (push-mark (point) t t)
+            (search-forward "h3")
+	    (org-sort-entries nil ?p)
+	    (buffer-string))))
+  )
 
 (ert-deftest test-org/string-collate-greaterp ()
   "Test `org-string-collate-greaterp' specifications."
@@ -3955,8 +4020,9 @@ SCHEDULED: <2017-05-06 Sat>
                       (org-file-contents "http://some-valid-url"))
                   (kill-buffer buffer))))))
   ;; Throw error when trying to access an invalid URL.
-  (should-error
-   (let ((buffer (generate-new-buffer "url-retrieve-output")))
+  (should-not
+   (let ((buffer (generate-new-buffer "url-retrieve-output"))
+         (org-resource-download-policy t))
      (unwind-protect
 	 ;; Simulate unsuccessful retrieval of a URL.
 	 (cl-letf (((symbol-function 'url-retrieve-synchronously)
@@ -3964,11 +4030,12 @@ SCHEDULED: <2017-05-06 Sat>
 		      (with-current-buffer buffer
 			(insert "HTTP/1.1 404 Not found\n\ndoes not matter"))
 		      buffer)))
-	   (org-file-contents "http://this-url-must-not-exist"))
+	   (org-file-contents "http://this-url-must-not-exist" 'noerror))
        (kill-buffer buffer))))
   ;; Try to access an invalid URL, but do not throw an error.
   (should-error
-   (let ((buffer (generate-new-buffer "url-retrieve-output")))
+   (let ((buffer (generate-new-buffer "url-retrieve-output"))
+         (org-resource-download-policy t))
      (unwind-protect
 	 ;; Simulate unsuccessful retrieval of a URL.
 	 (cl-letf (((symbol-function 'url-retrieve-synchronously)
@@ -3979,7 +4046,8 @@ SCHEDULED: <2017-05-06 Sat>
 	   (org-file-contents "http://this-url-must-not-exist"))
        (kill-buffer buffer))))
   (should
-   (let ((buffer (generate-new-buffer "url-retrieve-output")))
+   (let ((buffer (generate-new-buffer "url-retrieve-output"))
+         (org-resource-download-policy t))
      (unwind-protect
 	 ;; Simulate unsuccessful retrieval of a URL.
 	 (cl-letf (((symbol-function 'url-retrieve-synchronously)
@@ -4051,7 +4119,13 @@ text"
   (should
    (org-test-with-temp-text "* H1\n* H2\n<point>* H3"
      (org-next-visible-heading -2)
-     (looking-at "\\* H1"))))
+     (looking-at "\\* H1")))
+  ;; Edge case: visible links.
+  (should
+   (let ((org-link-descriptive nil))
+     (org-test-with-temp-text "* <point>H1\n* [[https://orgmode.org][Org mode]]\n* H3"
+       (org-next-visible-heading 1)
+       (looking-at "\\* \\[\\[https:")))))
 
 (ert-deftest test-org/previous-visible-heading ()
   "Test `org-previous-visible-heading' specifications."

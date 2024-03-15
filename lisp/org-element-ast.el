@@ -1,6 +1,6 @@
 ;;; org-element-ast.el --- Abstract syntax tree for Org  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2023-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2023-2024 Free Software Foundation, Inc.
 
 ;; Author: Ihor Radchenko <yantar92 at posteo dot net>
 ;; Keywords: data, lisp
@@ -24,7 +24,7 @@
 
 ;; This file implements Org abstract syntax tree (AST) data structure.
 ;;
-;; Only the most generic aspect of the syntax tree are considered
+;; Only the most generic aspects of the syntax tree are considered
 ;; below.  The fine details of Org syntax are implemented elsewhere.
 ;;
 ;; Org AST is composed of nested syntax nodes.
@@ -85,7 +85,7 @@
 ;; `:secondary' holds a list of properties that may contain extra AST
 ;; nodes, in addition to the node contents.
 ;;
-;; `deferred' property describes how to update not-yet-calculated
+;; `:deferred' property describes how to update not-yet-calculated
 ;; properties on request.
 ;;
 ;;
@@ -170,7 +170,7 @@
 ;; inside `:title' property.  Note that `:title' is listed in
 ;; `:secondary' value.
 ;;
-;; The following example illustrates an example AST for Org document:
+;; The following example illustrates AST structure for an Org document:
 ;;
 ;; ---- Org document --------
 ;; * Heading with *bold* text
@@ -205,6 +205,7 @@
 
 (require 'org-macs)
 (require 'inline) ; load indentation rules
+(require 'subr-x) ;; FIXME: Required for Emacs 27
 
 ;;;; Syntax node type
 
@@ -230,16 +231,11 @@ when NODE is an anonymous node."
 
 (define-inline org-element-type-p (node types)
   "Return non-nil when NODE type is one of TYPES.
-TYPES can be a type symbol or a list of symbols."
-  (if (inline-const-p types)
-      (if (listp (inline-const-val types))
-          (inline-quote (memq (org-element-type ,node t) ,types))
-        (inline-quote (eq (org-element-type ,node t) ,types)))
-    (inline-letevals (node types)
-      (inline-quote
-       (if (listp ,types)
-           (memq (org-element-type ,node t) ,types)
-         (eq (org-element-type ,node t) ,types))))))
+      TYPES can be a type symbol or a list of symbols."
+  (inline-letevals (node types)
+    (if (listp (inline-const-val types))
+	(inline-quote (memq (org-element-type ,node t) ,types))
+      (inline-quote (eq (org-element-type ,node t) ,types)))))
 
 (defun org-element-secondary-p (node)
   "Non-nil when NODE directly belongs to a secondary node.
@@ -353,18 +349,15 @@ node types.")
          (setq plist (plist-put plist property idx)))
        org-element--standard-properties)
       plist)
-    "Property list holding standard indexes for `org-element--standard-properties'."))
+    "Property list holding standard indexes for `org-element--standard-properties'.")
 
-(define-inline org-element--property-idx (property)
-  "Return standard property index or nil."
-  (declare (pure t))
-  (if (inline-const-p property)
+  (define-inline org-element--property-idx (property)
+    "Return standard property index or nil."
+    (declare (pure t))
+    (inline-letevals (property)
       (plist-get
        org-element--standard-properties-idxs
-       (inline-const-val property))
-    (inline-quote (plist-get
-                   org-element--standard-properties-idxs
-                   ,property))))
+       (inline-const-val property)))))
 
 (define-inline org-element--parray (node)
   "Return standard property array for NODE."
@@ -413,26 +406,16 @@ Ignore standard property array."
 Do not resolve deferred values.
 If PROPERTY is not present, return DFLT."
   (declare (pure t))
-  (let ((idx (and (inline-const-p property)
-                  (org-element--property-idx property))))
-    (if idx
-        (inline-letevals (node)
-          (inline-quote
-           (if-let ((parray (org-element--parray ,node)))
-               (pcase (aref parray ,idx)
-                 (`org-element-ast--nil ,dflt)
-                 (val val))
-             ;; No property array exists.  Fall back to `plist-get'.
-             (org-element--plist-property ,property ,node ,dflt))))
-      (inline-letevals (node property)
-        (inline-quote
-         (let ((idx (org-element--property-idx ,property)))
-           (if-let ((parray (and idx (org-element--parray ,node))))
-               (pcase (aref parray idx)
-                 (`org-element-ast--nil ,dflt)
-                 (val val))
-             ;; No property array exists.  Fall back to `plist-get'.
-             (org-element--plist-property ,property ,node ,dflt))))))))
+  (inline-letevals (node property)
+    (let ((idx (org-element--property-idx (inline-const-val property))))
+      (inline-quote
+       (let ((idx (or ,idx (org-element--property-idx ,property))))
+         (if-let ((parray (and idx (org-element--parray ,node))))
+             (pcase (aref parray idx)
+               (`org-element-ast--nil ,dflt)
+               (val val))
+           ;; No property array exists.  Fall back to `plist-get'.
+           (org-element--plist-property ,property ,node ,dflt)))))))
 
 (define-inline org-element--put-parray (node &optional parray)
   "Initialize standard property array in NODE.
@@ -682,6 +665,12 @@ Return nil."
     (org-element-properties-resolve node (eq 'force undefer)))
   (org-element--properties-mapc fun node))
 
+;; There is purposely no function like `org-element-properties' that
+;; returns a list of properties.  Such function would tempt the users
+;; to (1) run it, creating a whole new list; (2) filter over that list
+;; - the process requiring a lot of extra consing, adding a load onto
+;; Emacs GC, memory used, and slowing things up as creating new lists
+;; is not free for CPU.
 (defsubst org-element-properties-map (fun node &optional undefer)
   "Apply FUN for each property of NODE and return a list of the results.
 FUN will be called with three arguments: property name, property
@@ -804,8 +793,8 @@ When DATUM is `plain-text', all the properties are removed."
          (org-element-put-property (car tail) :parent node-copy)
          (setq tail (cdr tail)))
        node-copy))
-    (_
-     (let ((node-copy (copy-sequence datum)))
+    (type
+     (let ((node-copy (append (list type (copy-sequence (cadr datum))) (copy-sequence (cddr datum)))))
        ;; Copy `:standard-properties'
        (when-let ((parray (org-element-property-raw :standard-properties node-copy)))
          (org-element-put-property node-copy :standard-properties (copy-sequence parray)))
@@ -1142,8 +1131,11 @@ The function takes care of setting `:parent' property for NEW."
 	    (eq new-type 'plain-text))
         ;; We cannot replace OLD with NEW since strings are not mutable.
         ;; We take the long path.
-        (progn (org-element-insert-before new old)
-	       (org-element-extract old))
+        (progn
+          (org-element-insert-before new old)
+	  (org-element-extract old)
+          ;; We will return OLD.
+          (setq old new))
       ;; Since OLD is going to be changed into NEW by side-effect, first
       ;; make sure that every element or object within NEW has OLD as
       ;; parent.

@@ -1,6 +1,6 @@
 ;;; ob-maxima.el --- Babel Functions for Maxima      -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
 ;; Author: Eric S Fraga
 ;;	Eric Schulte
@@ -38,8 +38,8 @@
 (require 'ob)
 
 (defconst org-babel-header-args:maxima
-  '((batch               . (batchload batch load))
-    (graphics-pkg        . (plot draw)))
+  '((batch               . ((batchload batch load)))
+    (graphics-pkg        . ((plot draw))))
   "Maxima-specific header arguments.")
 
 (defvar org-babel-tangle-lang-exts)

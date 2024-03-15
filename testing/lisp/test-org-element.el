@@ -755,6 +755,15 @@ Some other text
 		   (text (org-element-map tree 'plain-text 'identity nil t)))
 	      (org-element-set text "b")
 	      (org-element-map tree 'plain-text 'identity nil t)))))
+  ;; Replace string inside anonymous element with another string.
+  (let* ((parent (org-element-create 'anonymous nil "test"))
+	 (str (car (org-element-contents parent))))
+    (let ((return (org-element-set str "repl"))
+          (new (car (org-element-contents parent))))
+      ;; Return the modified value.
+      (should (eq return new))
+      (should (equal new "repl"))
+      (should (eq (org-element-parent new) parent))))
   ;; KEEP-PROPS
   (should
    (org-element-property
@@ -794,7 +803,13 @@ Some other text
   (should-not (org-element-copy nil))
   ;; Return a copy secondary strings.
   (should (equal '("text") (org-element-copy '("text"))))
-  (should-not (eq '("text") (org-element-copy '("text")))))
+  (should-not (eq '("text") (org-element-copy '("text"))))
+  ;; Do not alter the source.
+  (org-test-with-temp-text "*bold*"
+    (let* ((source (org-element-context))
+           (copy (org-element-copy source)))
+      (should-not (org-element-parent copy))
+      (should (org-element-parent source)))))
 
 
 
@@ -2372,6 +2387,23 @@ e^{i\\pi}+1=0
       (org-element-property
        :type
        (org-element-map (org-element-parse-buffer) 'link #'identity nil t)))))
+  (should
+   (equal
+    "radio"
+    (org-test-with-temp-text "<<<radio>>><<<radio2>>><<<foo>>>A radio link"
+      (org-update-radio-target-regexp)
+      (org-element-property
+       :type
+       (org-element-map (org-element-parse-buffer) 'link #'identity nil t)))))
+  (should
+   (equal
+    "radio"
+    (let ((org-target-link-regexp-limit 9))
+      (org-test-with-temp-text "<<<radio>>><<<radio2>>><<<foo>>>A radio link"
+        (org-update-radio-target-regexp)
+        (org-element-property
+         :type
+         (org-element-map (org-element-parse-buffer) 'link #'identity nil t))))))
   ;; Pathological case: radio target of length 1 at beginning of line
   ;; not followed by spaces.
   (should
@@ -2623,30 +2655,34 @@ e^{i\\pi}+1=0
      (org-element-map (org-element-parse-buffer) 'paragraph 'identity)))
   ;; Include incomplete-drawers.
   (should
-   (org-test-with-temp-text ":TEST:\nParagraph"
+   (org-test-with-temp-text "<point>:TEST:\nParagraph"
+     (let ((elem (org-element-at-point)))
+       (and (eq (org-element-type elem) 'paragraph)
+	    (= (point-max) (org-element-property :end elem))))))
+  (should
+   (org-test-with-temp-text "<point>foo\n:end:\nbar"
      (let ((elem (org-element-at-point)))
        (and (eq (org-element-type elem) 'paragraph)
 	    (= (point-max) (org-element-property :end elem))))))
   ;; Include incomplete blocks.
   (should
-   (org-test-with-temp-text "#+BEGIN_CENTER\nParagraph"
+   (org-test-with-temp-text "<point>#+BEGIN_CENTER\nParagraph"
      (let ((elem (org-element-at-point)))
        (and (eq (org-element-type elem) 'paragraph)
 	    (= (point-max) (org-element-property :end elem))))))
-  ;; Include incomplete dynamic blocks.
   (should
-   (org-test-with-temp-text "#+BEGIN: \n<point>Paragraph"
+   (org-test-with-temp-text "<point>foo\n#+END_CENTER\nbar"
      (let ((elem (org-element-at-point)))
        (and (eq (org-element-type elem) 'paragraph)
 	    (= (point-max) (org-element-property :end elem))))))
   ;; Include incomplete latex environments.
   (should
-   (org-test-with-temp-text "\begin{equation}\nParagraph"
+   (org-test-with-temp-text "<point>\begin{equation}\nParagraph"
      (let ((elem (org-element-at-point)))
        (and (eq (org-element-type elem) 'paragraph)
 	    (= (point-max) (org-element-property :end elem))))))
   (should
-   (org-test-with-temp-text "Paragraph\n\begin{equation}"
+   (org-test-with-temp-text "<point>Paragraph\n\begin{equation}"
      (let ((elem (org-element-at-point)))
        (and (eq (org-element-type elem) 'paragraph)
 	    (= (point-max) (org-element-property :end elem))))))
@@ -4197,6 +4233,9 @@ DEADLINE: <2012-03-29 thu.> SCHEDULED: <2012-03-29 thu.> CLOSED: [2012-03-29 thu
   (should
    (equal (org-test-parse-and-interpret "[[file:todo.org::*task]]")
 	  "[[file:todo.org::*task]]\n"))
+  (should
+   (equal (org-test-parse-and-interpret "[[/tmp/todo.org::*task]]")
+	  "[[/tmp/todo.org::*task]]\n"))
   ;; Id links.
   (should (equal (org-test-parse-and-interpret "[[id:aaaa]]") "[[id:aaaa]]\n"))
   ;; Custom-id links.
@@ -5327,6 +5366,54 @@ modified by side effect, influencing the original values."
                                org-element--cache-self-verify-frequency
                                org-element--cache-diagnostics-level))))
        (should (memq var org-element-ignored-local-variables))))))
+
+(ert-deftest test-org-element/cache-get-key ()
+  "Test `org-element-cache-get-key' and `org-element-cache-store-key'."
+  (org-test-with-temp-text
+      "* Heading
+Paragraph
+with text <point>
+
+Another paragraph."
+    (org-element-cache-store-key
+     (org-element-lineage (org-element-at-point) '(headline))
+     :robust-key 'val-robust 'robust)
+    (org-element-cache-store-key
+     (org-element-lineage (org-element-at-point) '(headline))
+     :fragile-key 'val-fragile)
+    (insert "and more text.")
+    (should (eq 'val-robust
+                (org-element-cache-get-key
+                 (org-element-lineage (org-element-at-point) '(headline))
+                 :robust-key)))
+    (should (eq 'not-found
+                (org-element-cache-get-key
+                 (org-element-lineage (org-element-at-point) '(headline))
+                 :fragile-key 'not-found))))
+  ;; No length change in the altered.
+  (org-test-with-temp-text
+      "* Heading
+Paragraph
+<point>with text
+
+Another paragraph."
+    (org-element-cache-store-key
+     (org-element-lineage (org-element-at-point) '(headline))
+     :robust-key 'val-robust 'robust)
+    (org-element-cache-store-key
+     (org-element-lineage (org-element-at-point) '(headline))
+     :fragile-key 'val-fragile)
+    (search-forward "with")
+    (org-combine-change-calls (match-beginning 0) (match-end 0)
+      (replace-match "asdf"))
+    (should (eq 'val-robust
+                (org-element-cache-get-key
+                 (org-element-lineage (org-element-at-point) '(headline))
+                 :robust-key)))
+    (should (eq 'not-found
+                (org-element-cache-get-key
+                 (org-element-lineage (org-element-at-point) '(headline))
+                 :fragile-key 'not-found)))))
 
 (provide 'test-org-element)
 

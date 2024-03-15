@@ -445,12 +445,12 @@ Paragraph"
                 (should (= 1 (org-export-get-ordinal table info)))
                 (should (= 2 (org-export-get-ordinal table info '(section))))
                 (should (= 1 (org-export-get-ordinal table info nil #'org-ascii--has-caption-p)))
-                (should (= 1 (org-export-get-ordinal table info nil from-third))))
+                (should-not (org-export-get-ordinal table info nil from-third)))
                ("Should be Table 2"
                 (should (= 2 (org-export-get-ordinal table info)))
                 (should (= 3 (org-export-get-ordinal table info '(section))))
                 (should (= 2 (org-export-get-ordinal table info nil #'org-ascii--has-caption-p)))
-                (should (= 1 (org-export-get-ordinal table info nil from-third))))
+                (should-not (org-export-get-ordinal table info nil from-third)))
                ("Should be Table 3"
                 (should (= 3 (org-export-get-ordinal table info)))
                 (should (= 4 (org-export-get-ordinal table info '(section))))
@@ -4226,6 +4226,14 @@ This test does not cover listings and custom environments."
    (equal '("&ldquo;" "&rdquo;")
 	  (let ((org-export-default-language "en"))
 	    (org-test-with-parsed-data "* \"$x$\""
+	      (org-element-map tree 'plain-text
+		(lambda (s) (org-export-activate-smart-quotes s :html info))
+		info)))))
+  ;; Smart quotes when object has multiple secondary strings.
+  (should
+   (equal '(" &ldquo;prefix&rdquo; " " &ldquo;suffix&rdquo;")
+	  (let ((org-export-default-language "en"))
+	    (org-test-with-parsed-data "[cite:; \"prefix\" @key \"suffix\";]"
 	      (org-element-map tree 'plain-text
 		(lambda (s) (org-export-activate-smart-quotes s :html info))
 		info)))))

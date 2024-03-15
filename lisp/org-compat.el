@@ -1,6 +1,6 @@
 ;;; org-compat.el --- Compatibility Code for Older Emacsen -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -348,6 +348,24 @@ Execute BODY, and unwind connection-local variables."
     `(with-connection-local-profiles (connection-local-get-profiles nil)
        ,@body)))
 
+;; assoc-delete-all missing from 26.1
+(if (fboundp 'assoc-delete-all)
+    (defalias 'org-assoc-delete-all 'assoc-delete-all)
+  ;; from compat/compat-27.el
+  (defun org-assoc-delete-all (key alist &optional test)
+    "Delete all matching key from alist, default test equal"
+    (unless test (setq test #'equal))
+    (while (and (consp (car alist))
+		(funcall test (caar alist) key))
+      (setq alist (cdr alist)))
+    (let ((tail alist) tail-cdr)
+      (while (setq tail-cdr (cdr tail))
+	(if (and (consp (car tail-cdr))
+		 (funcall test (caar tail-cdr) key))
+            (setcdr tail (cdr tail-cdr))
+          (setq tail tail-cdr))))
+    alist))
+
 
 ;;; Emacs < 26.1 compatibility
 
@@ -444,16 +462,6 @@ Counting starts at 1."
 (define-obsolete-function-alias 'org-string-match-p 'string-match-p "9.0")
 
 ;;;; Functions and variables from previous releases now obsolete.
-
-(make-obsolete
- 'org-src-associate-babel-session
- "To be removed in the next release.  Use `org-babel-edit-prep:<lang>' instead."
- "9.7")
-(make-obsolete
- 'org-src-babel-configure-edit-buffer
- "To be removed in the next release.  Use a custom `org-src-mode-hook' instead."
- "9.7")
-
 (define-obsolete-variable-alias 'org-export-ignored-local-variables
   'org-element-ignored-local-variables "Org 9.7")
 (define-obsolete-function-alias 'org-habit-get-priority
@@ -621,6 +629,24 @@ Counting starts at 1."
 (define-obsolete-function-alias 'org-file-url-p 'org-url-p "9.6")
 (define-obsolete-variable-alias 'org-plantuml-executable-args 'org-plantuml-args
   "Org 9.6")
+
+(defconst org-latex-line-break-safe "\\\\[0pt]"
+  "Linebreak protecting the following [...].
+
+Without \"[0pt]\" it would be interpreted as an optional argument to
+the \\\\.
+
+This constant, for example, makes the below code not err:
+
+\\begin{tabular}{c|c}
+    [t] & s\\\\[0pt]
+    [I] & A\\\\[0pt]
+    [m] & kg
+\\end{tabular}")
+(make-obsolete 'org-latex-line-break-safe
+               "should not be used - it is not safe in all the scenarios."
+               "9.7")
+
 (defun org-in-fixed-width-region-p ()
   "Non-nil if point in a fixed-width region."
   (save-match-data
@@ -644,6 +670,20 @@ Counting starts at 1."
 
 (define-obsolete-function-alias 'org--math-always-on
   'org--math-p "9.7")
+
+(defmacro org-no-popups (&rest body)
+  "Suppress popup windows and evaluate BODY."
+  `(let (pop-up-frames pop-up-windows)
+     ,@body))
+(make-obsolete 'org-no-popups "no longer used" "9.7")
+
+(defun org-switch-to-buffer-other-window (&rest args)
+  "Switch to buffer in a second window on the current frame.
+In particular, do not allow pop-up frames.
+Returns the newly created buffer."
+  (let (pop-up-frames pop-up-windows)
+    (apply #'switch-to-buffer-other-window args)))
+  (make-obsolete 'org-switch-to-buffer-other-window "no longer used" "9.7")
 
 (make-obsolete 'org-refresh-category-properties "no longer used" "9.7")
 (make-obsolete 'org-refresh-effort-properties "no longer used" "9.7")
@@ -736,13 +776,23 @@ See `org-link-parameters' for documentation on the other parameters."
   (org-unbracket-string "<" ">" s))
 (make-obsolete 'org-remove-angle-brackets 'org-unbracket-string "9.0")
 
+(defcustom org-capture-bookmark t
+  "When non-nil, add bookmark pointing at the last stored position when capturing."
+  :group 'org-capture
+  :version "24.3"
+  :type 'boolean)
+(make-obsolete-variable
+ 'org-capture-bookmark
+ "use `org-bookmark-names-plist' instead."
+ "9.7")
+
 (defcustom org-publish-sitemap-file-entry-format "%t"
   "Format string for site-map file entry.
 You could use brackets to delimit on what part the link will be.
 
 %t is the title.
 %a is the author.
-%d is the date formatted using `org-publish-sitemap-date-format'."
+%d is the date."
   :group 'org-export-publish
   :type 'string)
 (make-obsolete-variable

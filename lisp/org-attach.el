@@ -1,6 +1,6 @@
 ;;; org-attach.el --- Manage file attachments to Org outlines -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2008-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2008-2024 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@newartisans.com>
 ;; Keywords: org data attachment
@@ -142,7 +142,7 @@ Selective means to respect the inheritance setting in
 	  (const :tag "Inherit parent node attachments" t)
 	  (const :tag "Respect org-use-property-inheritance" selective)))
 
-(defcustom org-attach-store-link-p nil
+(defcustom org-attach-store-link-p 'attached
   "Non-nil means store a link to a file when attaching it.
 When t, store the link to original file location.
 When `file', store link to the attached file location.
@@ -320,7 +320,7 @@ Shows a list of commands and prompts for another key to execute a command."
         (save-excursion
 	  (save-window-excursion
 	    (unless org-attach-expert
-	      (org-switch-to-buffer-other-window "*Org Attach*")
+	      (switch-to-buffer-other-window "*Org Attach*")
 	      (erase-buffer)
 	      (setq cursor-type nil
 	            header-line-format "Use C-v, M-v, C-n or C-p to navigate.")

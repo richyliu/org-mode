@@ -1,6 +1,6 @@
 ;;; ox-html.el --- HTML Backend for Org Export Engine -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2011-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2011-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;;      Jambunathan K <kjambunathan at gmail dot com>
@@ -2682,7 +2682,10 @@ information."
   (let ((attributes (org-export-read-attribute :attr_html example-block)))
     (if (plist-get attributes :textarea)
 	(org-html--textarea-block example-block)
-      (format "<pre class=\"example\"%s>\n%s</pre>"
+      (if-let ((class-val (plist-get attributes :class)))
+          (setq attributes (plist-put attributes :class (concat "example " class-val)))
+        (setq attributes (plist-put attributes :class "example")))
+      (format "<pre%s>\n%s</pre>"
 	      (let* ((reference (org-html--reference example-block info))
 		     (a (org-html--make-attribute-string
 			 (if (or (not reference) (plist-member attributes :id))
@@ -3228,8 +3231,6 @@ INFO is a plist holding contextual information.  See
 	 (desc (org-string-nw-p desc))
 	 (path
 	  (cond
-	   ((member type '("http" "https" "ftp" "mailto" "news"))
-	    (url-encode-url (concat type ":" raw-path)))
 	   ((string= "file" type)
 	    ;; During publishing, turn absolute file names belonging
 	    ;; to base directory into relative file names.  Otherwise,
@@ -3256,7 +3257,7 @@ INFO is a plist holding contextual information.  See
 		  (concat raw-path
 			  "#"
 			  (org-publish-resolve-external-link option path t))))))
-	   (t raw-path)))
+	   (t (url-encode-url (concat type ":" raw-path)))))
 	 (attributes-plist
 	  (org-combine-plists
 	   ;; Extract attributes from parent's paragraph.  HACK: Only

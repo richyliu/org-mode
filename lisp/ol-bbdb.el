@@ -1,6 +1,6 @@
 ;;; ol-bbdb.el --- Links to BBDB entries             -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Authors: Carsten Dominik <carsten.dominik@gmail.com>
 ;;       Thomas Baumann <thomas dot baumann at ch dot tum dot de>
@@ -226,7 +226,7 @@ date year)."
 
 ;;; Implementation
 
-(defun org-bbdb-store-link ()
+(defun org-bbdb-store-link (&optional _interactive?)
   "Store a link to a BBDB database entry."
   (when (eq major-mode 'bbdb-mode)
     ;; This is BBDB, we make this link!

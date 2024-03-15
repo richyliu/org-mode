@@ -1,6 +1,6 @@
 ;;; ob-tangle.el --- Extract Source Code From Org Files -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
 ;; Author: Eric Schulte
 ;; Keywords: literate programming, reproducible research
@@ -166,6 +166,23 @@ read-write permissions for the user, read-only for everyone else."
   :package-version '(Org . "9.6")
   :type 'integer)
 
+(defcustom org-babel-tangle-remove-file-before-write 'auto
+  "How to overwrite the existing tangle target.
+When set to nil, `org-babel-tangle' will replace contents of an existing
+tangle target (and fail when tangle target is read-only).
+When set to t, the tangle target (including read-only) will be deleted
+first and a new file, possibly with different ownership and
+permissions, will be created.
+When set to symbol `auto', overwrite read-only tangle targets and
+replace contents otherwise."
+  :group 'org-babel-tangle
+  :package-version '(Org . "9.7")
+  :type '(choice
+	  (const :tag "Replace contents, but keep the same file" nil)
+          (const :tag "Re-create file" t)
+          (const :tag "Re-create when read-only" auto))
+  :safe t)
+
 (defun org-babel-find-file-noselect-refresh (file)
   "Find file ensuring that the latest changes on disk are
 represented in the file."
@@ -256,7 +273,8 @@ matching a regular expression."
 	     (when (equal arg '(16))
 	       (or (cdr (assq :tangle (nth 2 (org-babel-get-src-block-info 'no-eval))))
 		   (user-error "Point is not in a source code block"))))
-	    path-collector)
+	    path-collector
+            (source-file buffer-file-name))
 	(mapc ;; map over file-names
 	 (lambda (by-fn)
 	   (let ((file-name (car by-fn)))
@@ -313,10 +331,28 @@ matching a regular expression."
                                       (compare-buffer-substrings
                                        nil nil nil
                                        tangle-buf nil nil)))))))
-                     ;; erase previous file
-                     (when (file-exists-p file-name)
+                     (when (equal (if (file-name-absolute-p file-name)
+                                      file-name
+                                    (expand-file-name file-name))
+                                  (if (file-name-absolute-p source-file)
+                                      source-file
+                                    (expand-file-name source-file)))
+                       (error "Not allowed to tangle into the same file as self"))
+                     ;; We do not erase, but overwrite previous file
+                     ;; to preserve any existing symlinks.
+                     ;; This behavior is modified using
+                     ;; `org-babel-tangle-remove-file-before-write' to
+                     ;; tangle to read-only files.
+                     (when (and
+			    (file-exists-p file-name)
+                            (pcase org-babel-tangle-remove-file-before-write
+                              (`auto (not (file-writable-p file-name)))
+                              (`t t)
+                              (`nil nil)
+                              (_ (error "Invalid value of `org-babel-tangle-remove-file-before-write': %S"
+					org-babel-tangle-remove-file-before-write))))
                        (delete-file file-name))
-		     (write-region nil nil file-name)
+                     (write-region nil nil file-name)
 		     (mapc (lambda (mode) (set-file-modes file-name mode)) modes))
                    (push file-name path-collector))))))
 	 (if (equal arg '(4))
@@ -619,9 +655,12 @@ by `org-babel-get-src-block-info'."
 
 ;; de-tangling functions
 (defun org-babel-detangle (&optional source-code-file)
-  "Propagate changes in source file back original to Org file.
+  "Propagate changes from current source buffer back to the original Org file.
 This requires that code blocks were tangled with link comments
-which enable the original code blocks to be found."
+which enable the original code blocks to be found.
+
+Optional argument SOURCE-CODE-FILE is the file path to be used instead
+of the current buffer."
   (interactive)
   (save-excursion
     (when source-code-file (find-file source-code-file))

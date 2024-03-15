@@ -1,6 +1,6 @@
 ;;; org-cycle.el --- Visibility cycling of Org entries -*- lexical-binding: t; -*-
 ;;
-;; Copyright (C) 2020-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2020-2024 Free Software Foundation, Inc.
 ;;
 ;; Maintainer: Ihor Radchenko <yantar92 at posteo dot net>
 ;; Keywords: folding, visibility cycling, invisible text
@@ -116,6 +116,7 @@ than its value."
 	  (const :tag "No limit" nil)
 	  (integer :tag "Maximum level")))
 
+(defvaralias 'org-hide-block-startup 'org-cycle-hide-block-startup)
 (defcustom org-cycle-hide-block-startup nil
   "Non-nil means entering Org mode will fold all blocks.
 This can also be set in on a per-file basis with
@@ -126,6 +127,7 @@ This can also be set in on a per-file basis with
   :group 'org-cycle
   :type 'boolean)
 
+(defvaralias 'org-hide-drawer-startup 'org-cycle-hide-drawer-startup)
 (defcustom org-cycle-hide-drawer-startup t
   "Non-nil means entering Org mode will fold all drawers.
 This can also be set in on a per-file basis with
@@ -201,6 +203,7 @@ Special case: when 0, never leave empty lines in collapsed view."
   :type 'integer)
 (put 'org-cycle-separator-lines 'safe-local-variable 'integerp)
 
+(defvaralias 'org-pre-cycle-hook 'org-cycle-pre-hook)
 (defcustom org-cycle-pre-hook nil
   "Hook that is run before visibility cycling is happening.
 The function(s) in this hook must accept a single argument which indicates
@@ -241,6 +244,7 @@ normal outline commands like `show-all', but not with the cycling commands."
   :package-version '(Org . "9.6")
   :type 'boolean)
 
+(defvaralias 'org-tab-first-hook 'org-cycle-tab-first-hook)
 (defvar org-cycle-tab-first-hook nil
   "Hook for functions to attach themselves to TAB.
 See `org-ctrl-c-ctrl-c-hook' for more information.
@@ -336,6 +340,10 @@ same as `S-TAB') also when called without prefix argument."
 	      (and org-cycle-level-after-item/entry-creation
 		   (or (org-cycle-level)
 		       (org-cycle-item-indentation))))
+    (when (and org-cycle-max-level
+               (or (not (integerp org-cycle-max-level))
+                   (< org-cycle-max-level 1)))
+      (user-error "`org-cycle-max-level' must be a positive integer"))
     (let* ((limit-level
 	    (or org-cycle-max-level
 		(and (boundp 'org-inlinetask-min-level)
@@ -611,7 +619,7 @@ With a numeric prefix, show all headlines up to that level."
   (cond
    ;; `fold' is technically not allowed value, but it is often
    ;; intuitively tried by users by analogy with #+STARTUP: fold.
-   ((memq org-startup-folded '(t fold))
+   ((memq org-startup-folded '(t fold overview))
     (org-cycle-overview))
    ((eq org-startup-folded 'content)
     (org-cycle-content))
@@ -663,8 +671,7 @@ With a numeric prefix, show all headlines up to that level."
 		     (org-cycle-content))))
 	        ((or "all" "showall")
 		 (org-fold-show-subtree))
-	        (_ nil)))
-	    (org-end-of-subtree t)))))))
+	        (_ nil)))))))))
 
 (defun org-cycle-overview ()
   "Switch to overview mode, showing only top-level headlines."

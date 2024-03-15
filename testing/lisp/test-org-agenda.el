@@ -80,6 +80,100 @@
     (should (= 3 (count-lines (point-min) (point-max)))))
   (org-test-agenda--kill-all-agendas))
 
+(ert-deftest test-org-agenda/time-grid ()
+  "Test time grid settings."
+  (cl-assert (not org-agenda-sticky) nil "precondition violation")
+  (cl-assert (not (org-test-agenda--agenda-buffers))
+	     nil "precondition violation")
+  ;; Default time grid.
+  (org-test-at-time "2024-01-17 8:00"
+    (let ((org-agenda-span 'day)
+	  (org-agenda-files `(,(expand-file-name "examples/agenda-file2.org"
+					         org-test-dir))))
+      ;; NOTE: Be aware that `org-agenda-list' may or may not display
+      ;; past scheduled items depending whether the date is today
+      ;; `org-today' or not.
+      (org-agenda-list nil  "<2024-01-17 Fri>")
+      (set-buffer org-agenda-buffer-name)
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "8:00...... now - - - - - - - - - - - - - - - - - - - - - - - - -")))
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "agenda-file2: 9:30-10:00 Scheduled:  TODO one")))
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "agenda-file2:10:00-12:30 Scheduled:  TODO two")))
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "10:00...... ----------------")))
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "agenda-file2:13:00-15:00 Scheduled:  TODO three")))
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "agenda-file2:19:00...... Scheduled:  TODO four"))))
+    (org-test-agenda--kill-all-agendas))
+  ;; Custom time grid strings
+  (org-test-at-time "2024-01-17 8:00"
+    (let ((org-agenda-span 'day)
+	  (org-agenda-files `(,(expand-file-name "examples/agenda-file2.org"
+					         org-test-dir)))
+          (org-agenda-time-grid '((daily today require-timed)
+                                  (800 1000 1200 1400 1600 1800 2000)
+			          "..." "^^^^^^^^^^^^^^" )))
+      ;; NOTE: Be aware that `org-agenda-list' may or may not display
+      ;; past scheduled items depending whether the date is today
+      ;; `org-today' or not.
+      (org-agenda-list nil  "<2024-01-17 Fri>")
+      (set-buffer org-agenda-buffer-name)
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "10:00...    ^^^^^^^^^^^^^^"))))
+    (org-test-agenda--kill-all-agendas))
+  ;; Time grid remove-match
+  (org-test-at-time "2024-01-17 8:00"
+    (let ((org-agenda-span 'day)
+	  (org-agenda-files `(,(expand-file-name "examples/agenda-file2.org"
+					         org-test-dir)))
+          (org-agenda-time-grid '((today remove-match)
+			          (800 1000 1200 1400 1600 1800 2000)
+			          "......" "----------------" )))
+      ;; NOTE: Be aware that `org-agenda-list' may or may not display
+      ;; past scheduled items depending whether the date is today
+      ;; `org-today' or not.
+      (org-agenda-list nil  "<2024-01-17 Fri>")
+      (set-buffer org-agenda-buffer-name)
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "agenda-file2: 9:30-10:00 Scheduled:  TODO one")))
+      (save-excursion
+        (goto-char (point-min))
+        (should-not (search-forward "10:00...... ----------------" nil t))))
+    (org-test-agenda--kill-all-agendas))
+  ;; Time grid with `org-agenda-default-appointment-duration'
+  (org-test-at-time "2024-01-17 8:00"
+    (let ((org-agenda-span 'day)
+	  (org-agenda-files `(,(expand-file-name "examples/agenda-file2.org"
+					         org-test-dir)))
+          (org-agenda-time-grid '((today remove-match)
+			          (800 1000 1200 1400 1600 1800 2000)
+			          "......" "----------------" ))
+          (org-agenda-default-appointment-duration 60))
+      ;; NOTE: Be aware that `org-agenda-list' may or may not display
+      ;; past scheduled items depending whether the date is today
+      ;; `org-today' or not.
+      (org-agenda-list nil  "<2024-01-17 Fri>")
+      (set-buffer org-agenda-buffer-name)
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "agenda-file2:19:00-20:00 Scheduled:  TODO four")))
+      ;; Bug https://list.orgmode.org/orgmode/20211119135325.7f3f85a9@hsu-hh.de/
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "14:00...... ----------------"))))
+    (org-test-agenda--kill-all-agendas)))
+
 (ert-deftest test-org-agenda/todo-selector ()
   "Test selecting keywords in `org-todo-list'."
   (cl-assert (not org-agenda-sticky) nil "precondition violation")
@@ -496,6 +590,63 @@ DEADLINE: " (cdr timestamp))))
                     (org-agenda nil "f")
                     (buffer-string))))))))))))
 
+(ert-deftest test-org-agenda/skip-scheduled-repeats-after-deadline ()
+  "Test `org-agenda-skip-scheduled-repeats-after-deadline'."
+  (cl-assert (not org-agenda-sticky) nil "precondition violation")
+  (cl-assert (not (org-test-agenda--agenda-buffers))
+	     nil "precondition violation")
+  (dolist (org-agenda-skip-scheduled-repeats-after-deadline '(nil t))
+    (org-test-at-time "2024-01-01 8:00"
+      (org-test-with-temp-text-in-file "
+* TODO Do me every day before Jan, 12th (included)
+SCHEDULED: <2024-01-03 Wed +1d> DEADLINE: <2024-01-05 Fri>
+"
+        (let ((org-agenda-span 'week)
+	      (org-agenda-files `(,(buffer-file-name))))
+          ;; NOTE: Be aware that `org-agenda-list' may or may not display
+          ;; past scheduled items depending whether the date is today
+          ;; `org-today' or not.
+          (org-agenda-list nil  "<2024-01-01 Mon>")
+          (set-buffer org-agenda-buffer-name)
+          (if org-agenda-skip-scheduled-repeats-after-deadline
+              (should
+               ;; Not displayed after deadline.
+               (string-match-p
+                "Week-agenda (W01):
+Monday      1 January 2024 W01
+  [^:]+:In   4 d.:  TODO Do me every day before Jan, 12th (included)
+Tuesday     2 January 2024
+Wednesday   3 January 2024
+  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+Thursday    4 January 2024
+  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+Friday      5 January 2024
+  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+  [^:]+:Deadline:   TODO Do me every day before Jan, 12th (included)
+Saturday    6 January 2024
+Sunday      7 January 2024"
+                (buffer-string)))
+            (should
+             ;; Displayed after deadline.
+             (string-match-p
+              "Week-agenda (W01):
+Monday      1 January 2024 W01
+  [^:]+:In   4 d.:  TODO Do me every day before Jan, 12th (included)
+Tuesday     2 January 2024
+Wednesday   3 January 2024
+  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+Thursday    4 January 2024
+  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+Friday      5 January 2024
+  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+  [^:]+:Deadline:   TODO Do me every day before Jan, 12th (included)
+Saturday    6 January 2024
+  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+Sunday      7 January 2024
+  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)"
+              (buffer-string))))))
+      (org-test-agenda--kill-all-agendas))))
+
 (ert-deftest test-org-agenda/goto-date ()
   "Test `org-agenda-goto-date'."
   (unwind-protect
@@ -535,6 +686,47 @@ DEADLINE: " (cdr timestamp))))
     (should-not (search-forward "Bar" nil t))
     (should-not (org-agenda-files)))
   (org-test-agenda--kill-all-agendas))
+
+(ert-deftest test-org-agenda/skip-deadline-prewarning-if-scheduled ()
+  "Test `org-agenda-skip-deadline-prewarning-if-scheduled'."
+  (org-test-at-time
+   "2024-01-15"
+   (let ((org-agenda-skip-deadline-prewarning-if-scheduled t))
+     (org-test-agenda-with-agenda
+      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+      (org-agenda-list nil nil 1)
+      (should-not (search-forward "In " nil t))))
+   (let ((org-agenda-skip-deadline-prewarning-if-scheduled 10))
+     (org-test-agenda-with-agenda
+      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+      (org-agenda-list nil nil 1)
+      (should (search-forward "In " nil t))))
+   ;; Custom prewarning cookie "-3d", so there should be no warning anyway.
+   (let ((org-agenda-skip-deadline-prewarning-if-scheduled 10))
+     (org-test-agenda-with-agenda
+      "* TODO foo\nDEADLINE: <2024-01-20 Sat -3d> SCHEDULED: <2024-01-19 Fri>"
+      (org-agenda-list nil nil 1)
+      (should-not (search-forward "In " nil t))))
+   (let ((org-agenda-skip-deadline-prewarning-if-scheduled 3))
+     (org-test-agenda-with-agenda
+      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+      (org-agenda-list nil nil 1)
+      (should-not (search-forward "In " nil t))))
+   (let ((org-agenda-skip-deadline-prewarning-if-scheduled nil))
+     (org-test-agenda-with-agenda
+      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+      (org-agenda-list nil nil 1)
+      (should (search-forward "In " nil t))))
+   (let ((org-agenda-skip-deadline-prewarning-if-scheduled 'pre-scheduled))
+     (org-test-agenda-with-agenda
+      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-16 Tue>"
+      (org-agenda-list nil nil 1)
+      (should-not (search-forward "In " nil t))))
+   (let ((org-agenda-skip-deadline-prewarning-if-scheduled 'pre-scheduled))
+     (org-test-agenda-with-agenda
+      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-15 Mon>"
+      (org-agenda-list nil nil 1)
+      (should (search-forward "In " nil t))))))
 
 
 ;; agenda redo

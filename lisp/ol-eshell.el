@@ -1,6 +1,6 @@
 ;;; ol-eshell.el --- Links to Working Directories in Eshell  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2011-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2011-2024 Free Software Foundation, Inc.
 
 ;; Author: Konrad Hinsen <konrad.hinsen AT fastmail.net>
 
@@ -60,7 +60,7 @@ followed by a colon."
     (insert command)
     (eshell-send-input)))
 
-(defun org-eshell-store-link ()
+(defun org-eshell-store-link (&optional _interactive?)
   "Store eshell link.
 When opened, the link switches back to the current eshell buffer and
 the current working directory."

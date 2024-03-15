@@ -1,6 +1,6 @@
 ;;; ol-docview.el --- Links to Docview mode buffers  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
 ;; Author: Jan Böcker <jan.boecker at jboecker dot de>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -83,7 +83,7 @@
       (error "No such file: %s" path))
     (when page (doc-view-goto-page page))))
 
-(defun org-docview-store-link ()
+(defun org-docview-store-link (&optional _interactive?)
   "Store a link to a docview buffer."
   (when (eq major-mode 'doc-view-mode)
     ;; This buffer is in doc-view-mode

@@ -1,10 +1,9 @@
 ;;; ox-beamer.el --- Beamer Backend for Org Export Engine -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2007-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik AT gmail DOT com>
 ;;         Nicolas Goaziou <n.goaziou AT gmail DOT com>
-;; Maintainer: Nicolas Goaziou <mail@nicolasgoaziou.fr>
 ;; Keywords: org, wp, tex
 
 ;; This file is part of GNU Emacs.
@@ -148,6 +147,22 @@ which is replaced with the subtitle."
   :version "26.1"
   :package-version '(Org . "8.3")
   :type '(string :tag "Format string"))
+
+(defcustom org-beamer-frame-environment "orgframe"
+  "Name of the alternative beamer frame environment.
+In frames marked as fragile, this environment is used in place of
+the usual frame environment.
+
+This permits insertion of a beamer frame inside example blocks,
+working around beamer limitations.  See
+https://list.orgmode.org/87a5nux3zr.fsf@t14.reltub.ca/T/#mc7221e93f138bdd56c916b194b9230d3a6c3de09
+
+This option may need to be changed when \"\\end{orgframe}\" string is
+used inside beamer slides."
+  :group 'org-export-beamer
+  :package-version '(Org . "9.7")
+  :type '(string :tag "Beamer frame")
+  :safe (lambda (str) (string-match-p "^[A-Za-z]+$" str)))
 
 
 ;;; Internal Variables
@@ -409,12 +424,14 @@ used as a communication channel."
   "Format HEADLINE as a frame.
 CONTENTS holds the contents of the headline.  INFO is a plist
 used as a communication channel."
-  (let ((fragilep
-	 ;; FRAGILEP is non-nil when HEADLINE contains an element
-	 ;; among `org-beamer-verbatim-elements'.
-	 (org-element-map headline org-beamer-verbatim-elements 'identity
-			  info 'first-match)))
-    (concat "\\begin{frame}"
+  (let* ((fragilep
+	  ;; FRAGILEP is non-nil when HEADLINE contains an element
+	  ;; among `org-beamer-verbatim-elements'.
+	  (org-element-map headline org-beamer-verbatim-elements 'identity
+			   info 'first-match))
+         (frame (or (and fragilep org-beamer-frame-environment)
+                    "frame")))
+    (concat "\\begin{" frame "}"
 	    ;; Overlay specification, if any. When surrounded by
 	    ;; square brackets, consider it as a default
 	    ;; specification.
@@ -481,7 +498,7 @@ used as a communication channel."
 	    ;; output.
 	    (if (not fragilep) contents
 	      (replace-regexp-in-string "\\`\n*" "\\& " (or contents "")))
-	    "\\end{frame}")))
+	    "\\end{" frame "}")))
 
 (defun org-beamer--format-block (headline contents info)
   "Format HEADLINE as a block.
@@ -513,6 +530,18 @@ used as a communication channel."
 	 (options (if raw-options
 		      (org-beamer--normalize-argument raw-options 'option)
 		    ""))
+         ;; also process actions
+	 (raw-action (org-element-property :BEAMER_ACT headline))
+	 (action (if raw-action
+	             ;; If BEAMER_act property has its value enclosed in square
+	             ;; brackets, it is a default overlay specification and
+	             ;; overlay specification is empty.  Otherwise, it is an
+	             ;; overlay specification and the default one is nil.
+                     (org-beamer--normalize-argument
+		      raw-action
+		      (if (string-match "\\`\\[.*\\]\\'" raw-action) 'defaction
+			'action))
+	           ""))
 	 ;; Start a "columns" environment when explicitly requested or
 	 ;; when there is no previous headline or the previous
 	 ;; headline do not have a BEAMER_column property.
@@ -522,12 +551,12 @@ used as a communication channel."
 	  (or (equal environment "columns")
 	      (and column-width
 		   (not (and parent-env
-			     (equal (downcase parent-env) "columns")))
+			   (equal (downcase parent-env) "columns")))
 		   (or (org-export-first-sibling-p headline info)
 		       (not (org-element-property
-			     :BEAMER_COL
-			     (org-export-get-previous-element
-			      headline info)))))))
+			   :BEAMER_COL
+			   (org-export-get-previous-element
+			    headline info)))))))
 	 ;; End the "columns" environment when explicitly requested or
 	 ;; when there is no next headline or the next headline do not
 	 ;; have a BEAMER_column property.
@@ -535,11 +564,11 @@ used as a communication channel."
 	  (or (equal environment "columns")
 	      (and column-width
 		   (not (and parent-env
-			     (equal (downcase parent-env) "columns")))
+			   (equal (downcase parent-env) "columns")))
 		   (or (org-export-last-sibling-p headline info)
 		       (not (org-element-property
-			     :BEAMER_COL
-			     (org-export-get-next-element headline info))))))))
+			   :BEAMER_COL
+			   (org-export-get-next-element headline info))))))))
     (concat
      (when start-columns-p
        ;; Column can accept options only when the environment is
@@ -547,10 +576,13 @@ used as a communication channel."
        (if (not (equal environment "columns")) "\\begin{columns}\n"
 	 (format "\\begin{columns}%s\n" options)))
      (when column-width
-       (format "\\begin{column}%s{%s}\n"
+       (format "\\begin{column}%s%s{%s}\n"
 	       ;; One can specify placement for column only when
 	       ;; HEADLINE stands for a column on its own.
-	       (if (equal environment "column") options "")
+               options
+               (if env-format
+                   "" ; Inner environment is specified - pass actions later.
+                 action)
 	       (format "%s\\columnwidth" column-width)))
      ;; Block's opening string.
      (when (nth 2 env-format)
@@ -558,23 +590,18 @@ used as a communication channel."
 	(org-fill-template
 	 (nth 2 env-format)
 	 (nconc
-	  ;; If BEAMER_act property has its value enclosed in square
-	  ;; brackets, it is a default overlay specification and
-	  ;; overlay specification is empty.  Otherwise, it is an
-	  ;; overlay specification and the default one is nil.
-	  (let ((action (org-element-property :BEAMER_ACT headline)))
-	    (cond
-	     ((not action) (list (cons "a" "") (cons "A" "") (cons "R" "")))
-	     ((and (string-prefix-p "[" action)
-		   (string-suffix-p "]" action))
-	      (list
-	       (cons "A" (org-beamer--normalize-argument action 'defaction))
-	       (cons "a" "")
-	       (cons "R" action)))
-	     (t
-	      (list (cons "a" (org-beamer--normalize-argument action 'action))
-		    (cons "A" "")
-		    (cons "R" action)))))
+	  (cond
+	   ((not action) (list (cons "a" "") (cons "A" "") (cons "R" "")))
+	   ((and (string-prefix-p "[" action)
+		 (string-suffix-p "]" action))
+	    (list
+	     (cons "A" (org-beamer--normalize-argument action 'defaction))
+	     (cons "a" "")
+	     (cons "R" raw-action)))
+	   (t
+	    (list (cons "a" action)
+		  (cons "A" "")
+		  (cons "R" raw-action))))
 	  (list (cons "o" options)
 		(cons "O" (or raw-options ""))
 		(cons "h" title)
@@ -805,7 +832,6 @@ contextual information."
 	  (org-export-get-reference radio-target info)
 	  text))
 
-
 ;;;; Template
 ;;
 ;; Template used is similar to the one used in `latex' backend,
@@ -825,6 +851,10 @@ holding export options."
      (org-latex--insert-compiler info)
      ;; Document class and packages.
      (org-latex-make-preamble info)
+     ;; Define the alternative frame environment.
+     (unless (equal "frame" org-beamer-frame-environment)
+       (format "\\newenvironment<>{%s}[1][]{\\begin{frame}#2[environment=%1$s,#1]}{\\end{frame}}\n"
+               org-beamer-frame-environment))
      ;; Insert themes.
      (let ((format-theme
 	    (lambda (prop command)

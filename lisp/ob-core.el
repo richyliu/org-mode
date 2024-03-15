@@ -1,6 +1,6 @@
 ;;; ob-core.el --- Working with Code Blocks          -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
 
 ;; Authors: Eric Schulte
 ;;	Dan Davison
@@ -73,10 +73,12 @@
 (declare-function org-element-parent "org-element-ast" (node))
 (declare-function org-element-type "org-element-ast" (node &optional anonymous))
 (declare-function org-element-type-p "org-element-ast" (node &optional types))
+(declare-function org-element-interpret-data "org-element" (data))
 (declare-function org-entry-get "org" (pom property &optional inherit literal-nil))
 (declare-function org-escape-code-in-region "org-src" (beg end))
 (declare-function org-forward-heading-same-level "org" (arg &optional invisible-ok))
 (declare-function org-in-commented-heading-p "org" (&optional no-inheritance))
+(declare-function org-indent-block "org" ())
 (declare-function org-indent-line "org" ())
 (declare-function org-list-get-list-end "org-list" (item struct prevs))
 (declare-function org-list-prevs-alist "org-list" (struct))
@@ -700,8 +702,9 @@ By default, consider the block at point.  However, when optional
 argument DATUM is provided, extract information from that parsed
 object instead.
 
-Return nil if point is not on a source block.  Otherwise, return
-a list with the following pattern:
+Return nil if point is not on a source block (blank lines after a
+source block are considered a part of that source block).
+Otherwise, return a list with the following pattern:
 
   (language body arguments switches name start coderef)"
   (let* ((datum (or datum (org-element-context)))
@@ -767,8 +770,30 @@ When `:file-desc' is missing, return nil."
     (`(:file-desc) result)
     (`(:file-desc . ,(and (pred stringp) val)) val)))
 
-(defvar *this*) ; Dynamically bound in `org-babel-execute-src-block'
-                ; and `org-babel-read'
+(defvar *this*)
+;; Dynamically bound in `org-babel-execute-src-block'
+;; and `org-babel-read'
+
+(defun org-babel-session-buffer (&optional info)
+  "Return buffer name for session associated with current code block.
+Return nil when no such live buffer with process exists.
+When INFO is non-nil, it should be a list returned by
+`org-babel-get-src-block-info'.
+This function uses org-babel-session-buffer:<lang> function to
+retrieve backend-specific session buffer name."
+  (declare-function org-babel-comint-buffer-livep "ob-comint" (buffer))
+  (when-let* ((info (or info (org-babel-get-src-block-info 'no-eval)))
+              (lang (nth 0 info))
+              (session (cdr (assq :session (nth 2 info))))
+              (cmd (intern (concat "org-babel-session-buffer:" lang)))
+              (buffer-name
+               (if (fboundp cmd)
+                   (funcall cmd session info)
+                 ;; Use session name as buffer name by default.
+                 session)))
+    (require 'ob-comint)
+    (when (org-babel-comint-buffer-livep buffer-name)
+      buffer-name)))
 
 ;;;###autoload
 (defun org-babel-execute-src-block (&optional arg info params executor-type)
@@ -840,14 +865,16 @@ guess will be made."
 		 (dir (cdr (assq :dir params)))
 		 (mkdirp (cdr (assq :mkdirp params)))
 		 (default-directory
-		   (cond
-		    ((not dir) default-directory)
-		    ((member mkdirp '("no" "nil" nil))
-		     (file-name-as-directory (expand-file-name dir)))
-		    (t
-		     (let ((d (file-name-as-directory (expand-file-name dir))))
-		       (make-directory d 'parents)
-		       d))))
+		  (cond
+		   ((not dir) default-directory)
+                   ((when-let ((session (org-babel-session-buffer info)))
+                      (buffer-local-value 'default-directory (get-buffer session))))
+		   ((member mkdirp '("no" "nil" nil))
+		    (file-name-as-directory (expand-file-name dir)))
+		   (t
+		    (let ((d (file-name-as-directory (expand-file-name dir))))
+		      (make-directory d 'parents)
+		      d))))
 		 (cmd (intern (concat "org-babel-execute:" lang)))
 		 result exec-start-time)
 	    (unless (fboundp cmd)
@@ -1168,11 +1195,16 @@ Return t if a code block was found at point, nil otherwise."
 	  ;; we want to restore this location after executing BODY.
 	  (outside-position
 	   (and (<= (line-beginning-position)
-		    (org-element-post-affiliated element))
+		   (org-element-post-affiliated element))
 		(point-marker)))
 	  (org-src-window-setup 'switch-invisibly))
      (when (and (org-babel-where-is-src-block-head element)
-		(org-edit-src-code))
+		(condition-case nil
+                    (org-edit-src-code)
+                  (t
+                   (org-edit-src-exit)
+                   (when outside-position (goto-char outside-position))
+                   nil)))
        (unwind-protect (progn ,@body)
 	 (org-edit-src-exit)
 	 (when outside-position (goto-char outside-position)))
@@ -1802,6 +1834,8 @@ HEADER-ARGUMENTS is alist of all the arguments."
 Return a cons cell, the `car' of which contains the TABLE less
 colnames, and the `cdr' of which contains a list of the column
 names."
+  ;; Skip over leading hlines.
+  (while (eq 'hline (car table)) (pop table))
   (if (eq 'hline (nth 1 table))
       (cons (cddr table) (car table))
     (cons (cdr table) (car table))))
@@ -1863,9 +1897,16 @@ of the vars, cnames and rnames."
           (when (and (not (equal colnames "no"))
                      ;; Compatibility note: avoid `length>', which
                      ;; isn't available until Emacs 28.
-                     (or colnames (and (> (length (cdr var)) 1)
-                                       (eq (nth 1 (cdr var)) 'hline)
-                                       (not (member 'hline (cddr (cdr var)))))))
+                     (or colnames
+                         ;; :colnames nil (default)
+                         ;; Auto-assign column names when the table
+                         ;; has hline as the second line after
+                         ;; non-hline row.
+                         (and (> (length (cdr var)) 1)
+                              (not (eq (car (cdr var)) 'hline)) ; first row
+                              (eq (nth 1 (cdr var)) 'hline) ; second row
+                              (not (member 'hline (cddr (cdr var)))) ; other rows
+                              )))
             (let ((both (org-babel-get-colnames (cdr var))))
               (setq cnames (cons (cons (car var) (cdr both))
                                  cnames))
@@ -2051,7 +2092,7 @@ With optional prefix argument ARG, jump backward ARG many source blocks."
       (goto-char (match-beginning 5)))))
 
 (defun org-babel-demarcate-block (&optional arg)
-  "Wrap or split the code in the region or on the point.
+  "Wrap or split the code in an active region or at point.
 
 With prefix argument ARG, also create a new heading at point.
 
@@ -2061,41 +2102,76 @@ is created.  In both cases if the region is demarcated and if the
 region is not active then the point is demarcated.
 
 When called within blank lines after a code block, create a new code
-block of the same language with the previous."
+block of the same language as the previous."
   (interactive "P")
   (let* ((info (org-babel-get-src-block-info 'no-eval))
 	 (start (org-babel-where-is-src-block-head))
          ;; `start' will be nil when within space lines after src block.
 	 (block (and start (match-string 0)))
-	 (headers (and start (match-string 4)))
+         (body-beg (and start (match-beginning 5)))
+         (body-end (and start (match-end 5)))
 	 (stars (concat (make-string (or (org-current-level) 1) ?*) " "))
 	 (upper-case-p (and block
 			    (let (case-fold-search)
 			      (string-match-p "#\\+BEGIN_SRC" block)))))
     (if (and info start) ;; At src block, but not within blank lines after it.
-        (mapc
-         (lambda (place)
-           (save-excursion
-             (goto-char place)
-             (let ((lang (nth 0 info))
-                   (indent (make-string (org-current-text-indentation) ?\s)))
-	       (when (string-match "^[[:space:]]*$"
-                                   (buffer-substring (line-beginning-position)
-                                                     (line-end-position)))
-                 (delete-region (line-beginning-position) (line-end-position)))
-               (insert (concat
-		        (if (looking-at "^") "" "\n")
-		        indent (if upper-case-p "#+END_SRC\n" "#+end_src\n")
-		        (if arg stars indent) "\n"
-		        indent (if upper-case-p "#+BEGIN_SRC " "#+begin_src ")
-		        lang
-		        (if (> (length headers) 1)
-			    (concat " " headers) headers)
-		        (if (looking-at "[\n\r]")
-			    ""
-			  (concat "\n" (make-string (current-column) ? )))))))
-	   (move-end-of-line 2))
-         (sort (if (org-region-active-p) (list (mark) (point)) (list (point))) #'>))
+        (let* ((copy (org-element-copy (org-element-at-point)))
+               (before (org-element-begin copy))
+               (beyond (org-element-end copy))
+               (parts
+                (if (org-region-active-p)
+                    (list body-beg (region-beginning) (region-end) body-end)
+                  (list body-beg (point) body-end)))
+               (pads ;; To calculate left-side white-space padding.
+                (if (org-region-active-p)
+                    (list (region-beginning) (region-end))
+                  (list (point))))
+               (n (- (length parts) 2)) ;; 1 or 2 parts in `dolist' below.
+               ;; `post-blank' caches the property before setting it to 0.
+               (post-blank (org-element-property :post-blank copy)))
+          ;; Point or region are within body when parts is in increasing order.
+          (unless (apply #'<= parts)
+            (user-error "Select within the source block body to split it"))
+          (setq parts (mapcar (lambda (p) (buffer-substring (car p) (cdr p)))
+                              (seq-mapn #'cons parts (cdr parts))))
+          ;; Map positions to columns for white-space padding.
+          (setq pads (mapcar (lambda (p) (save-excursion
+                                           (goto-char p)
+                                           (current-column)))
+                             pads))
+          (push 0 pads) ;; The 1st part never requires white-space padding.
+          (setq parts (mapcar (lambda (p) (string-join
+                                           (list (make-string (car p) ?\s)
+                                                 (cdr p))))
+                              (seq-mapn #'cons pads parts)))
+          (delete-region before beyond)
+          ;; Set `:post-blank' to 0.  We take care of spacing between blocks.
+          (org-element-put-property copy :post-blank 0)
+          (org-element-put-property copy :value (car parts))
+          (insert (org-element-interpret-data copy))
+          ;; `org-indent-block' may see another `org-element' (e.g. paragraph)
+          ;; immediately after the block.  Ensure to indent the inserted block
+          ;; and move point to its end.
+          (org-babel-previous-src-block 1)
+          (org-indent-block)
+          (goto-char (org-element-end (org-element-at-point)))
+          (org-element-put-property copy :caption nil)
+          (org-element-put-property copy :name nil)
+          ;; Insert the 2nd block, and the 3rd block when region is active.
+          (dolist (part (cdr parts))
+            (org-element-put-property copy :value part)
+            (insert (if arg (concat stars "\n") "\n"))
+            (cl-decf n)
+            (when (= n 0)
+              ;; Use `post-blank' to reset the property of the last block.
+              (org-element-put-property copy :post-blank post-blank))
+            (insert (org-element-interpret-data copy))
+            ;; Ensure to indent the inserted block and move point to its end.
+            (org-babel-previous-src-block 1)
+            (org-indent-block)
+            (goto-char (org-element-end (org-element-at-point))))
+          ;; Leave point at the last inserted block.
+          (goto-char (org-babel-previous-src-block 1)))
       (let ((start (point))
 	    (lang (or (car info) ; Reuse language from previous block.
                       (completing-read

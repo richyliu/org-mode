@@ -1,6 +1,6 @@
 ;;; ob-org.el --- Babel Functions for Org Code Blocks -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2010-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2024 Free Software Foundation, Inc.
 
 ;; Author: Eric Schulte
 ;; Keywords: literate programming, reproducible research
@@ -51,7 +51,7 @@ $VAR instances are replaced by VAR values defined in PARAMS."
     (setq body (replace-regexp-in-string
 		(regexp-quote (format "$%s" (car var)))
 		(format "%s" (cdr var))
-		body nil 'literal)))
+		body 'fixedcase 'literal)))
   
   (let ((prologue (cdr (assq :prologue params)))
         (epilogue (cdr (assq :epilogue params))))

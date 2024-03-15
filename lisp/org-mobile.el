@@ -1,5 +1,5 @@
 ;;; org-mobile.el --- Code for Asymmetric Sync With a Mobile Device -*- lexical-binding: t; -*-
-;; Copyright (C) 2009-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
 ;;
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -470,7 +470,7 @@ agenda view showing the flagged items."
       (insert "#+TAGS: " (mapconcat 'identity tags " ") "\n")
       (insert "#+ALLPRIORITIES: " org-mobile-allpriorities "\n")
       (when (file-exists-p (expand-file-name
-			    org-mobile-directory "agendas.org"))
+			    "agendas.org" org-mobile-directory))
 	(insert "* [[file:agendas.org][Agenda Views]]\n"))
       (pcase-dolist (`(,_ . ,link-name) files-alist)
 	(insert (format "* [[file:%s][%s]]\n" link-name link-name)))

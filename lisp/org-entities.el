@@ -1,6 +1,6 @@
 ;;; org-entities.el --- Support for Special Entities -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2010-2023 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>,
 ;;         Ulf Stegemann <ulf at zeitform dot de>
@@ -29,6 +29,7 @@
 
 (require 'org-macs)
 (org-assert-version)
+(require 'seq) ; Emacs 27 does not preload seq.el; for `seq-every-p'.
 
 (declare-function org-mode "org" ())
 (declare-function org-toggle-pretty-entities "org"       ())
