@@ -6655,7 +6655,7 @@ scheduled items with an hour specification like [h]h:mm."
 		         (and (/= current schedule)
 			      (/= current today)
 			      (/= current repeat)
-                              (/= current (+ schedule ddays))))
+                              (/= current (+ schedule delay-days))))
 	         (throw :skip nil)))
 	     ;; Possibly skip done tasks.
 	     (when (and donep
