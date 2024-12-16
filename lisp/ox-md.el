@@ -3,7 +3,7 @@
 ;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou@gmail.com>
-;; Keywords: org, wp, markdown
+;; Keywords: org, text, markdown
 
 ;; This file is part of GNU Emacs.
 
@@ -47,11 +47,15 @@
 
 (defcustom org-md-headline-style 'atx
   "Style used to format headlines.
-This variable can be set to either `atx' or `setext'."
+This variable can be set to either `atx', `setext', or `mixed'.
+
+Mixed style uses Setext style markup for the first two headline levels
+and uses ATX style markup for the remaining four levels."
   :group 'org-export-md
   :type '(choice
 	  (const :tag "Use \"atx\" style" atx)
-	  (const :tag "Use \"Setext\" style" setext)))
+	  (const :tag "Use \"Setext\" style" setext)
+          (const :tag "Use \"mixed\" style" mixed)))
 
 
 ;;;; Footnotes
@@ -232,7 +236,7 @@ anchor tag for the section as a string.  TAGS are the tags set on
 the section."
   (let ((anchor-lines (and anchor (concat anchor "\n\n"))))
     ;; Use "Setext" style
-    (if (and (eq style 'setext) (< level 3))
+    (if (and (memq style '(setext mixed)) (< level 3))
         (let* ((underline-char (if (= level 1) ?= ?-))
                (underline (concat (make-string (length title) underline-char)
 				  "\n")))
@@ -397,9 +401,10 @@ a communication channel."
       (cond
        ;; Cannot create a headline.  Fall-back to a list.
        ((or (org-export-low-level-p headline info)
-	    (not (memq style '(atx setext)))
+	    (not (memq style '(atx mixed setext)))
 	    (and (eq style 'atx) (> level 6))
-	    (and (eq style 'setext) (> level 2)))
+	    (and (eq style 'setext) (> level 2))
+	    (and (eq style 'mixed) (> level 6)))
 	(let ((bullet
 	       (if (not (org-export-numbered-headline-p headline info)) "-"
 		 (concat (number-to-string
@@ -452,7 +457,7 @@ a communication channel."
 					(org-list-parents-alist struct)))))
 			   "."))))
     (concat bullet
-	    (make-string (- 4 (length bullet)) ? )
+	    (make-string (max 1 (- 4 (length bullet))) ? )
 	    (pcase (org-element-property :checkbox item)
 	      (`on "[X] ")
 	      (`trans "[-] ")
@@ -628,6 +633,12 @@ information."
   "Transcode PARAGRAPH element into Markdown format.
 CONTENTS is the paragraph contents.  INFO is a plist used as
 a communication channel."
+  ;; Ensure that we do not create multiple paragraphs, when a single
+  ;; paragraph is expected.
+  ;; Multiple newlines may appear in CONTENTS, for example, when
+  ;; certain objects are stripped from export, leaving single newlines
+  ;; before and after.
+  (setq contents (org-remove-blank-lines contents))
   (let ((first-object (car (org-element-contents paragraph))))
     ;; If paragraph starts with a #, protect it.
     (if (and (stringp first-object) (string-prefix-p "#" first-object))

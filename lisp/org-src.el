@@ -5,7 +5,7 @@
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;;	   Bastien Guerry <bzg@gnu.org>
 ;;         Dan Davison <davison at stats dot ox dot ac dot uk>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -241,8 +241,8 @@ but the mode to use is `tuareg-mode'."
   :package-version '(Org . "9.7")
   :type '(repeat
 	  (cons
-	   (string "Language name")
-	   (symbol "Major mode"))))
+	   (string :tag "Language name")
+	   (symbol :tag "Major mode"))))
 
 (defcustom org-src-block-faces nil
   "Alist of faces to be used for source-block.
@@ -663,7 +663,7 @@ Leave point in edit buffer."
 (defvar org-src-fontify-natively) ; Defined in org.el
 (defun org-src-font-lock-fontify-block (lang start end)
   "Fontify code block between START and END using LANG's syntax.
-This function is called by Emacs' automatic fontification, as long
+This function is called by Emacs's automatic fontification, as long
 as `org-src-fontify-natively' is non-nil."
   (let ((modified (buffer-modified-p)) native-tab-width)
     (remove-text-properties start end '(face nil))
@@ -754,8 +754,6 @@ as `org-src-fontify-natively' is non-nil."
                  (s (and b (make-string (* (- e b) native-tab-width) ? ))))
             (when (and b (< b e)) (add-text-properties b e `(display ,s)))
             (forward-char)))))
-    ;; Clear abbreviated link folding.
-    (org-fold-region start end nil 'org-link)
     (add-text-properties
      start end
      '(font-lock-fontified t fontified t font-lock-multiline t))
@@ -778,12 +776,9 @@ as `org-src-fontify-natively' is non-nil."
             (lang-beg (match-beginning 1))
             (lang-end (match-end 1))
             pt)
-        (font-lock-append-text-property
-         lang-beg lang-end 'face 'org-meta-line)
-        (font-lock-append-text-property
-         beg lang-beg 'face 'shadow)
-        (font-lock-append-text-property
-         beg lang-end 'face 'org-inline-src-block)
+        (add-face-text-property beg lang-end 'org-inline-src-block)
+        (add-face-text-property beg lang-beg 'shadow)
+        (add-face-text-property lang-beg lang-end 'org-meta-line)
         (setq pt (goto-char lang-end))
         ;; `org-element--parse-paired-brackets' doesn't take a limit, so to
         ;; prevent it searching the entire rest of the buffer we temporarily
@@ -795,13 +790,11 @@ as `org-src-fontify-natively' is non-nil."
                                                   (point)))
                                            (point-max))))
           (when (ignore-errors (org-element--parse-paired-brackets ?\[))
-            (font-lock-append-text-property
-             pt (point) 'face 'org-inline-src-block)
+            (add-face-text-property pt (point) 'org-inline-src-block)
             (setq pt (point)))
           (when (ignore-errors (org-element--parse-paired-brackets ?\{))
             (remove-text-properties pt (point) '(face nil))
-            (font-lock-append-text-property
-             pt (1+ pt) 'face '(org-inline-src-block shadow))
+            (add-face-text-property pt (1+ pt) '(org-inline-src-block shadow))
             (unless (= (1+ pt) (1- (point)))
               (if org-src-fontify-natively
                   (org-src-font-lock-fontify-block
@@ -809,8 +802,7 @@ as `org-src-fontify-natively' is non-nil."
                    (1+ pt) (1- (point)))
                 (font-lock-append-text-property
                  (1+ pt) (1- (point)) 'face 'org-inline-src-block)))
-            (font-lock-append-text-property
-             (1- (point)) (point) 'face '(org-inline-src-block shadow))
+            (add-face-text-property (1- (point)) (point) '(org-inline-src-block shadow))
             (setq pt (point)))))
       t)))
 
@@ -958,16 +950,16 @@ remotely with point temporarily at the start of the code block in
 the Org buffer.
 
 This command is not bound to a key by default, to avoid conflicts
-with language major mode bindings.  To bind it to C-c @ in all
+with language major mode bindings.  To bind it to \\`C-c @' in all
 language major modes, you could use
 
   (add-hook \\='org-src-mode-hook
             (lambda () (define-key org-src-mode-map \"\\C-c@\"
                     \\='org-src-do-key-sequence-at-code-block)))
 
-In that case, for example, C-c @ t issued in code edit buffers
-would tangle the current Org code block, C-c @ e would execute
-the block and C-c @ h would display the other available
+In that case, for example, \\`C-c @ t' issued in code edit buffers
+would tangle the current Org code block, \\`C-c @ e' would execute
+the block and \\`C-c @ h' would display the other available
 Org-babel commands."
   (interactive "kOrg-babel key: ")
   (if (equal key (kbd "C-g")) (keyboard-quit)
@@ -1037,9 +1029,10 @@ Raise an error when current buffer is not a source editing buffer."
 	(pop-to-buffer-same-window buffer))
        (_ (switch-to-buffer-other-frame buffer))))
     (`reorganize-frame
-     (when (eq context 'edit) (delete-other-windows))
-     (switch-to-buffer-other-window buffer)
-     (when (eq context 'exit) (delete-other-windows)))
+     (pcase context
+       (`edit (pop-to-buffer buffer '(org-display-buffer-split)))
+       (`exit (pop-to-buffer buffer '(org-display-buffer-full-frame)))
+       (_ (switch-to-buffer-other-window buffer))))
     (`switch-invisibly (set-buffer buffer))
     (_
      (message "Invalid value %s for `org-src-window-setup'"
@@ -1485,11 +1478,7 @@ EVENT is passed to `mouse-set-point'."
       (goto-char beg)
       (cond
        ;; Block is hidden; move at start of block.
-       ((if (eq org-fold-core-style 'text-properties)
-            (org-fold-folded-p nil 'block)
-          (cl-some (lambda (o) (eq (overlay-get o 'invisible) 'org-hide-block))
-		   (overlays-at (point))))
-	(forward-line -1))
+       ((org-fold-folded-p nil 'block) (forward-line -1))
        (write-back (org-src--goto-coordinates coordinates beg end))))
     ;; Clean up left-over markers and restore window configuration.
     (set-marker beg nil)

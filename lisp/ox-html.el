@@ -5,7 +5,7 @@
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;;      Jambunathan K <kjambunathan at gmail dot com>
 ;; Maintainer: TEC <orgmode@tec.tecosaur.net>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 
 ;; This file is part of GNU Emacs.
 
@@ -270,7 +270,7 @@ This affects IDs that are determined from the ID property.")
   :type 'string)
 
 (defcustom org-html-style-default
-  "<style>
+  "<style type=\"text/css\">
   #content { max-width: 60em; margin: auto; }
   .title  { text-align: center;
              margin-bottom: .2em; }
@@ -861,15 +861,15 @@ link to the image."
   :type 'boolean)
 
 (defcustom org-html-inline-image-rules
-  `(("file" . ,(regexp-opt '(".jpeg" ".jpg" ".png" ".gif" ".svg" ".webp")))
-    ("http" . ,(regexp-opt '(".jpeg" ".jpg" ".png" ".gif" ".svg" ".webp")))
-    ("https" . ,(regexp-opt '(".jpeg" ".jpg" ".png" ".gif" ".svg" ".webp"))))
+  `(("file" . ,(regexp-opt '(".jpeg" ".jpg" ".png" ".gif" ".svg" ".webp" ".avif")))
+    ("http" . ,(regexp-opt '(".jpeg" ".jpg" ".png" ".gif" ".svg" ".webp" ".avif")))
+    ("https" . ,(regexp-opt '(".jpeg" ".jpg" ".png" ".gif" ".svg" ".webp" ".avif"))))
   "Rules characterizing image files that can be inlined into HTML.
 A rule consists in an association whose key is the type of link
 to consider, and value is a regexp that will be matched against
 link's path."
   :group 'org-export-html
-  :package-version '(Org . "9.5")
+  :package-version '(Org . "9.7")
   :type '(alist :key-type (string :tag "Type")
 		:value-type (regexp :tag "Path")))
 
@@ -1828,6 +1828,9 @@ This command just produces a buffer that contains class definitions for all
 faces used in the current Emacs session.  You can copy and paste the ones you
 need into your CSS file.
 
+The face definitions are prepended with
+`org-html-htmlize-font-prefix'.
+
 If you then set `org-html-htmlize-output-type' to `css', calls
 to the function `org-html-htmlize-region-for-paste' will
 produce code that uses these same face definitions."
@@ -1836,11 +1839,12 @@ produce code that uses these same face definitions."
   (and (get-buffer "*html*") (kill-buffer "*html*"))
   (with-temp-buffer
     (let ((fl (face-list))
-	  (htmlize-css-name-prefix "org-")
+	  (htmlize-css-name-prefix org-html-htmlize-font-prefix)
 	  (htmlize-output-type 'css)
 	  f i)
-      (while (setq f (pop fl)
-		   i (and f (face-attribute f :inherit)))
+      (while fl
+        (setq f (pop fl)
+	      i (and f (face-attribute f :inherit)))
 	(when (and (symbolp f) (or (not i) (not (listp i))))
 	  (insert (org-add-props (copy-sequence "1") nil 'face f))))
       (htmlize-region (point-min) (point-max))))
@@ -1869,36 +1873,43 @@ INFO is a plist used as a communication channel."
   (pcase (org-export-collect-footnote-definitions info)
     (`nil nil)
     (definitions
+     (format
+      (plist-get info :html-footnotes-section)
+      (org-html--translate "Footnotes" info)
       (format
-       (plist-get info :html-footnotes-section)
-       (org-html--translate "Footnotes" info)
-       (format
-	"\n%s\n"
-	(mapconcat
-	 (lambda (definition)
-	   (pcase definition
-	     (`(,n ,_ ,def)
-	      ;; `org-export-collect-footnote-definitions' can return
-	      ;; two kinds of footnote definitions: inline and blocks.
-	      ;; Since this should not make any difference in the HTML
-	      ;; output, we wrap the inline definitions within
-	      ;; a "footpara" class paragraph.
-	      (let ((inline? (not (org-element-map def org-element-all-elements
-				    #'identity nil t)))
-		    (anchor (org-html--anchor
-			     (format "fn.%d" n)
-			     n
-			     (format " class=\"footnum\" href=\"#fnr.%d\" role=\"doc-backlink\"" n)
-			     info))
-		    (contents (org-trim (org-export-data def info))))
-		(format "<div class=\"footdef\">%s %s</div>\n"
-			(format (plist-get info :html-footnote-format) anchor)
-			(format "<div class=\"footpara\" role=\"doc-footnote\">%s</div>"
-				(if (not inline?) contents
-				  (format "<p class=\"footpara\">%s</p>"
-					  contents))))))))
-	 definitions
-	 "\n"))))))
+       "\n%s\n"
+       (mapconcat
+	(lambda (definition)
+	  (pcase definition
+	    (`(,n ,label ,def)
+             ;; Do not assign number labels as they appear in Org mode
+             ;; - the footnotes are re-numbered by
+             ;; `org-export-get-footnote-number'.  If the label is not
+             ;; a number, keep it.
+             (when (and (stringp label)
+                        (equal label (number-to-string (string-to-number label))))
+               (setq label nil))
+	     ;; `org-export-collect-footnote-definitions' can return
+	     ;; two kinds of footnote definitions: inline and blocks.
+	     ;; Since this should not make any difference in the HTML
+	     ;; output, we wrap the inline definitions within
+	     ;; a "footpara" class paragraph.
+	     (let ((inline? (not (org-element-map def org-element-all-elements
+				 #'identity nil t)))
+		   (anchor (org-html--anchor
+                            (format "fn.%s" (or label n))
+			    n
+			    (format " class=\"footnum\" href=\"#fnr.%s\" role=\"doc-backlink\"" (or label n))
+			    info))
+		   (contents (org-trim (org-export-data def info))))
+	       (format "<div class=\"footdef\">%s %s</div>\n"
+		       (format (plist-get info :html-footnote-format) anchor)
+		       (format "<div class=\"footpara\" role=\"doc-footnote\">%s</div>"
+			       (if (not inline?) contents
+				 (format "<p class=\"footpara\">%s</p>"
+					 contents))))))))
+	definitions
+	"\n"))))))
 
 
 ;;; Template
@@ -2205,8 +2216,7 @@ holding export options."
 	 (format "%s\n"
 		 (format decl
 			 (or (and org-html-coding-system
-                                  ;; FIXME: Use Emacs 22 style here, see `coding-system-get'.
-				  (coding-system-get org-html-coding-system 'mime-charset))
+				  (coding-system-get org-html-coding-system :mime-charset))
 			     "iso-8859-1"))))))
    (org-html-doctype info)
    "\n"
@@ -2341,7 +2351,7 @@ is the language used for CODE, as a string, or nil."
      ((not (progn (require 'htmlize nil t)
 		(fboundp 'htmlize-region-for-paste)))
       ;; Emit a warning.
-      (warn "Cannot fontify source block (htmlize.el >= 1.34 required)")
+      (warn "Cannot fontify source block (htmlize.el >= 1.34 required).  Falling back to plain text.  (see `org-html-htmlize-output-type')")
       (org-html-encode-plain-text code))
      (t
       ;; Map language
@@ -2458,14 +2468,19 @@ of contents as a string, or nil if it is empty."
 			 (org-export-get-relative-level headline info)))
 		 (org-export-collect-headlines info depth scope))))
     (when toc-entries
-      (let ((toc (concat "<div id=\"text-table-of-contents\" role=\"doc-toc\">"
-			 (org-html--toc-text toc-entries)
-			 "</div>\n")))
+      (let* ((toc-id-counter (plist-get info :org-html--toc-counter))
+             (toc (concat (format "<div id=\"text-table-of-contents%s\" role=\"doc-toc\">"
+                                  (if toc-id-counter (format "-%d" toc-id-counter) ""))
+			  (org-html--toc-text toc-entries)
+			  "</div>\n")))
+        (plist-put info :org-html--toc-counter (1+ (or toc-id-counter 0)))
 	(if scope toc
 	  (let ((outer-tag (if (org-html--html5-fancy-p info)
 			       "nav"
 			     "div")))
-	    (concat (format "<%s id=\"table-of-contents\" role=\"doc-toc\">\n" outer-tag)
+	    (concat (format "<%s id=\"table-of-contents%s\" role=\"doc-toc\">\n"
+                            outer-tag
+                            (if toc-id-counter (format "-%d" toc-id-counter) ""))
 		    (let ((top-level (plist-get info :html-toplevel-hlevel)))
 		      (format "<h%d>%s</h%d>\n"
 			      top-level
@@ -2732,16 +2747,33 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
      (when (org-element-type-p prev 'footnote-reference)
        (plist-get info :html-footnote-separator)))
    (let* ((n (org-export-get-footnote-number footnote-reference info))
-	  (id (format "fnr.%d%s"
-		      n
+          (label (org-element-property :label footnote-reference))
+          ;; Do not assign number labels as they appear in Org mode -
+          ;; the footnotes are re-numbered by
+          ;; `org-export-get-footnote-number'.  If the label is not a
+          ;; number, keep it.
+          (label (if (and (stringp label)
+                          (equal label (number-to-string (string-to-number label))))
+                          nil
+                   label))
+	  (id (format "fnr.%s%s"
+		      (or label n)
 		      (if (org-export-footnote-first-reference-p
 			   footnote-reference info)
 			  ""
-			".100"))))
+                        (let ((label (org-element-property :label footnote-reference)))
+                          (format
+                           ".%d"
+                           (org-export-get-ordinal
+                            footnote-reference info '(footnote-reference)
+                            `(lambda (ref _)
+                               (if ,label
+                                   (equal (org-element-property :label ref) ,label)
+                                 (not (org-element-property :label ref)))))))))))
      (format
       (plist-get info :html-footnote-format)
       (org-html--anchor
-       id n (format " class=\"footref\" href=\"#fn.%d\" role=\"doc-backlink\"" n) info)))))
+       id n (format " class=\"footref\" href=\"#fn.%s\" role=\"doc-backlink\"" (or label n)) info)))))
 
 ;;;; Headline
 
@@ -2888,7 +2920,7 @@ INFO arguments."
 	  (org-html-format-headline-default-function
 	   todo todo-type priority text tags info)
 	  (org-html-close-tag "br" nil info)
-	  contents))
+	  (or contents "")))
 
 ;;;; Italic
 
@@ -3082,6 +3114,7 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
         (attributes (org-export-read-attribute :attr_html latex-environment))
         (label (org-html--reference latex-environment info t))
         (caption (and (org-html--latex-environment-numbered-p latex-environment)
+                      (org-html--math-environment-p latex-environment)
 		      (number-to-string
 		       (org-export-get-ordinal
 			latex-environment info nil
@@ -3117,6 +3150,7 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
   (let ((latex-frag (org-element-property :value latex-fragment))
 	(processing-type (plist-get info :with-latex)))
     (cond
+     ;; FIXME: Duplicated value in ‘cond’: t
      ((memq processing-type '(t mathjax))
       (org-html-format-latex latex-frag 'mathjax info))
      ((memq processing-type '(t html))
@@ -3306,7 +3340,7 @@ INFO is a plist holding contextual information.  See
 	(pcase (org-element-type destination)
 	  ;; ID link points to an external file.
 	  (`plain-text
-	   (let ((fragment (concat org-html--id-attr-prefix path))
+	   (let ((fragment (concat org-html--id-attr-prefix raw-path))
 		 ;; Treat links to ".org" files as ".html", if needed.
 		 (path (funcall link-org-files-as-html-maybe
 				destination info)))
@@ -3373,15 +3407,15 @@ INFO is a plist holding contextual information.  See
      ;; Coderef: replace link with the reference name or the
      ;; equivalent line number.
      ((string= type "coderef")
-      (let ((fragment (concat "coderef-" (org-html-encode-plain-text path))))
+      (let ((fragment (concat "coderef-" (org-html-encode-plain-text raw-path))))
 	(format "<a href=\"#%s\" %s%s>%s</a>"
 		fragment
 		(format "class=\"coderef\" onmouseover=\"CodeHighlightOn(this, \
 '%s');\" onmouseout=\"CodeHighlightOff(this, '%s');\""
 			fragment fragment)
 		attributes
-		(format (org-export-get-coderef-format path desc)
-			(org-export-resolve-coderef path info)))))
+		(format (org-export-get-coderef-format raw-path desc)
+			(org-export-resolve-coderef raw-path info)))))
      ;; External link with a description part.
      ((and path desc)
       (format "<a href=\"%s\"%s>%s</a>"
@@ -3934,7 +3968,7 @@ contextual information."
 CONTENTS is the exported HTML code.  INFO is the info plist."
   (with-temp-buffer
     (insert contents)
-    (set-auto-mode t)
+    (delay-mode-hooks (set-auto-mode t))
     (when (plist-get info :html-indent)
       (indent-region (point-min) (point-max)))
     (buffer-substring-no-properties (point-min) (point-max))))

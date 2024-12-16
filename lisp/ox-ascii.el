@@ -3,7 +3,7 @@
 ;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou at gmail dot com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 
 ;; This file is part of GNU Emacs.
 
@@ -954,14 +954,15 @@ channel."
 	 ;; Only links with a description need an entry.  Other are
 	 ;; already handled in `org-ascii-link'.
 	 (when description
-	   (let ((dest (if (equal type "fuzzy")
-			   (org-export-resolve-fuzzy-link link info)
-                         ;; Ignore broken links.  On broken link,
-                         ;; `org-export-resolve-id-link' will throw an
-                         ;; error and we will return nil.
-			 (condition-case nil
-                             (org-export-resolve-id-link link info)
-                           (org-link-broken nil)))))
+	   (let ((dest
+                  ;; Ignore broken links.  On broken link,
+                  ;; `org-export-resolve-id-link' will throw an
+                  ;; error and we will return nil.
+		  (condition-case nil
+                      (if (equal type "fuzzy")
+		          (org-export-resolve-fuzzy-link link info)
+                        (org-export-resolve-id-link link info))
+                    (org-link-broken nil))))
              (when dest
 	       (concat
 	        (org-ascii--fill-string
@@ -1651,6 +1652,12 @@ information."
   "Transcode a PARAGRAPH element from Org to ASCII.
 CONTENTS is the contents of the paragraph, as a string.  INFO is
 the plist used as a communication channel."
+  ;; Ensure that we do not create multiple paragraphs, when a single
+  ;; paragraph is expected.
+  ;; Multiple newlines may appear in CONTENTS, for example, when
+  ;; certain objects are stripped from export, leaving single newlines
+  ;; before and after.
+  (setq contents (org-remove-blank-lines contents))
   (org-ascii--justify-element
    (let ((indented-line-width (plist-get info :ascii-indented-line-width)))
      (if (not (wholenump indented-line-width)) contents

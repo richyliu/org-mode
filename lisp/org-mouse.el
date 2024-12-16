@@ -426,13 +426,14 @@ SCHEDULED: or DEADLINE: or ANYTHINGLIKETHIS:"
   (append
    (let ((tags (org-get-tags nil t)))
      (org-mouse-keyword-menu
-      (sort (mapcar #'car (org-get-buffer-tags)) #'string-lessp)
+      (sort (mapcar #'car (org-get-buffer-tags))
+            (or org-tags-sort-function #'org-string<))
       (lambda (tag)
 	(org-mouse-set-tags
 	 (sort (if (member tag tags)
 		   (delete tag tags)
 		 (cons tag tags))
-	       #'string-lessp)))
+	       (or org-tags-sort-function #'org-string<))))
       (lambda (tag) (member tag tags))
       ))
    '("--"
@@ -473,7 +474,7 @@ SCHEDULED: or DEADLINE: or ANYTHINGLIKETHIS:"
 				    (sort (if (member ',name ',options)
 					      (delete ',name ',options)
 					    (cons ',name ',options))
-					  'string-lessp)
+					  #'org-string<)
 				    " ")
 			 nil nil nil 1)
 			(when (functionp ',function) (funcall ',function)))
@@ -502,7 +503,8 @@ SCHEDULED: or DEADLINE: or ANYTHINGLIKETHIS:"
      ["Check TODOs" org-show-todo-tree t]
      ("Check Tags"
       ,@(org-mouse-keyword-menu
-	 (sort (mapcar #'car (org-get-buffer-tags)) #'string-lessp)
+	 (sort (mapcar #'car (org-get-buffer-tags))
+               (or org-tags-sort-function #'org-string<))
          (lambda (tag) (org-tags-sparse-tree nil tag)))
       "--"
       ["Custom Tag ..." org-tags-sparse-tree t])
@@ -512,7 +514,8 @@ SCHEDULED: or DEADLINE: or ANYTHINGLIKETHIS:"
      ["Display TODO List" org-todo-list t]
      ("Display Tags"
       ,@(org-mouse-keyword-menu
-	 (sort (mapcar #'car (org-get-buffer-tags)) #'string-lessp)
+	 (sort (mapcar #'car (org-get-buffer-tags))
+               (or org-tags-sort-function #'org-string<))
          (lambda (tag) (org-tags-view nil tag)))
       "--"
       ["Custom Tag ..." org-tags-view t])
@@ -558,7 +561,7 @@ SCHEDULED: or DEADLINE: or ANYTHINGLIKETHIS:"
       (save-excursion (org-apply-on-list wrap-fun nil)))))
 
 (defun org-mouse-bolp ()
-  "Return true if there only spaces, tabs, and `*' before point.
+  "Return non-nil if there only spaces, tabs, and `*' before point.
 This means, between the beginning of line and the point."
   (save-excursion
     (skip-chars-backward " \t*") (bolp)))
@@ -858,6 +861,10 @@ This means, between the beginning of line and the point."
   (unless (and (= 1 (event-click-count event))
 	       (org-mouse-in-region-p (posn-point (event-start event))))
     (mouse-drag-region event)))
+
+;; This function conflicts with touch screen gestures as it relays
+;; events to `mouse-drag-region'.
+(put 'org-mouse-down-mouse 'ignored-mouse-command t)
 
 (add-hook 'org-mode-hook
           (lambda ()

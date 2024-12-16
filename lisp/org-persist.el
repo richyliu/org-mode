@@ -42,7 +42,7 @@
 ;; `org-persist-load' will read the data with side effects.  For
 ;; example, loading `elisp' container will assign the values to
 ;; variables.
-;; 
+;;
 ;; Example usage:
 ;;
 ;; 1. Temporarily cache Elisp symbol value to disk.  Remove upon
@@ -416,7 +416,7 @@ FORMAT and ARGS are passed to `message'."
 (defun org-persist--read-elisp-file (&optional buffer-or-file)
   "Read elisp data from BUFFER-OR-FILE or current buffer."
   (let (;; UTF-8 is explicitly used in `org-persist--write-elisp-file'.
-        (coding-system-for-read 'utf-8)
+        (coding-system-for-read 'emacs-internal)
         (buffer-or-file (or buffer-or-file (current-buffer))))
     (with-temp-buffer
       (if (bufferp buffer-or-file)
@@ -448,23 +448,25 @@ FORMAT and ARGS are passed to `message'."
                  buffer-or-file (error-message-string err)))
          nil)))))
 
+;; FIXME: `pp' is very slow when writing even moderately large datasets
+;; We should probably drop it or find some fast formatter.
 (defun org-persist--write-elisp-file (file data &optional no-circular pp)
   "Write elisp DATA to FILE."
   ;; Fsync slightly reduces the chance of an incomplete filesystem
   ;; write, however on modern hardware its effectiveness is
-  ;; questionable and it is insufficient to garantee complete writes.
+  ;; questionable and it is insufficient to guarantee complete writes.
   ;; Coupled with the significant performance hit if writing many
   ;; small files, it simply does not make sense to use fsync here,
   ;; particularly as cache corruption is only a minor inconvenience.
   ;; With all this in mind, we ensure `write-region-inhibit-fsync' is
   ;; set.
   ;;
-  ;; To read more about this, see the comments in Emacs' fileio.c, in
+  ;; To read more about this, see the comments in Emacs's fileio.c, in
   ;; particular the large comment block in init_fileio.
   (let ((write-region-inhibit-fsync t)
         ;; We set UTF-8 here and in `org-persist--read-elisp-file'
         ;; to avoid the overhead from `find-auto-coding'.
-        (coding-system-for-write 'utf-8)
+        (coding-system-for-write 'emacs-internal)
         (print-circle (not no-circular))
         print-level
         print-length
@@ -476,12 +478,17 @@ FORMAT and ARGS are passed to `message'."
         (start-time (float-time)))
     (unless (file-exists-p (file-name-directory file))
       (make-directory (file-name-directory file) t))
-    (with-temp-file file
-      (insert ";;   -*- mode: lisp-data; -*-\n")
-      (if pp
-          (let ((pp-use-max-width nil)) ; Emacs bug#58687
-            (pp data (current-buffer)))
-        (prin1 data (current-buffer))))
+    ;; Force writing even when the file happens to be opened by
+    ;; another Emacs process.
+    (cl-letf (((symbol-function #'ask-user-about-lock)
+               ;; FIXME: Emacs 27 does not yet have `always'.
+               (lambda (&rest _) t)))
+      (with-temp-file file
+        (insert ";;   -*- mode: lisp-data; -*-\n")
+        (if pp
+            (let ((pp-use-max-width nil)) ; Emacs bug#58687
+              (pp data (current-buffer)))
+          (prin1 data (current-buffer)))))
     (org-persist--display-time
      (- (float-time) start-time)
      "Writing to %S" file)))
@@ -661,7 +668,14 @@ When INNER is non-nil, do not try to match as list of containers."
                                 (fboundp 'file-attribute-inode-number))
                        (file-attribute-inode-number
                         (file-attributes file))))
-         (setq hash (secure-hash 'md5 associated))
+         (setq hash
+               ;; `secure-hash' may trigger interactive dialog when it
+               ;; cannot determine the coding system automatically.
+               ;; Force coding system that works reliably for any text
+               ;; to avoid it.  The hash will be consistent, as long
+               ;; as we use the same coding system.
+               (let ((coding-system-for-write 'emacs-internal))
+                 (secure-hash 'md5 associated)))
          (puthash associated
                   (list (buffer-modified-tick associated)
                         file inode hash)
@@ -857,27 +871,36 @@ COLLECTION is the plist holding data collection."
                    path)))
         (format "%s-%s.%s" persist-file (md5 path) ext)))))
 
+(defun org-persist--check-write-access (path)
+  "Check write access to all missing directories in PATH.
+Show message and return nil if there is no write access.
+Otherwise, return t."
+  (let* ((dir (directory-file-name (file-name-as-directory path)))
+         (prev dir))
+    (while (and (not (file-exists-p dir))
+                (setq prev dir)
+                (not (equal dir (setq dir (directory-file-name
+                                         (file-name-directory dir)))))))
+    (if (file-writable-p prev) t ; return t
+      (message "org-persist: Missing write access rights to: %S" prev)
+      ;; return nil
+      nil)))
+
 (defun org-persist-write:index (container _)
   "Write index CONTAINER."
   (org-persist--get-collection container)
   (unless (file-exists-p org-persist-directory)
-    (make-directory org-persist-directory))
-  (unless (file-exists-p org-persist-directory)
-    (warn "Failed to create org-persist storage in %s."
-          org-persist-directory)
-    (let ((dir (directory-file-name
-                (file-name-as-directory org-persist-directory))))
-      (while (and (not (file-exists-p dir))
-                  (not (equal dir (setq dir (directory-file-name
-                                           (file-name-directory dir)))))))
-      (unless (file-writable-p dir)
-        (message "Missing write access rights to org-persist-directory: %S"
-                 org-persist-directory))))
+    (condition-case nil
+        (make-directory org-persist-directory 'parent)
+      (t
+       (warn "Failed to create org-persist storage in %s."
+             org-persist-directory)
+       (org-persist--check-write-access org-persist-directory))))
   (when (file-exists-p org-persist-directory)
     (let ((index-file
            (org-file-name-concat org-persist-directory org-persist-index-file)))
       (org-persist--merge-index-with-disk)
-      (org-persist--write-elisp-file index-file org-persist--index t t)
+      (org-persist--write-elisp-file index-file org-persist--index t)
       (setq org-persist--index-age
             (file-attribute-modification-time (file-attributes index-file)))
       index-file)))
@@ -1294,19 +1317,12 @@ such scenario."
         (make-temp-file "org-persist-" 'dir)))
 
 ;; Automatically write the data, but only when we have write access.
-(let ((dir (directory-file-name
-            (file-name-as-directory org-persist-directory))))
-  (while (and (not (file-exists-p dir))
-              (not (equal dir (setq dir (directory-file-name
-                                         (file-name-directory dir)))))))
-  (if (not (file-writable-p dir))
-      (message "Missing write access rights to org-persist-directory: %S"
-               org-persist-directory)
-    (add-hook 'kill-emacs-hook #'org-persist-clear-storage-maybe) ; Run last.
-    (add-hook 'kill-emacs-hook #'org-persist-write-all)
-    ;; `org-persist-gc' should run before `org-persist-write-all'.
-    ;; So we are adding the hook after `org-persist-write-all'.
-    (add-hook 'kill-emacs-hook #'org-persist-gc)))
+(when (org-persist--check-write-access org-persist-directory)
+  (add-hook 'kill-emacs-hook #'org-persist-clear-storage-maybe) ; Run last.
+  (add-hook 'kill-emacs-hook #'org-persist-write-all)
+  ;; `org-persist-gc' should run before `org-persist-write-all'.
+  ;; So we are adding the hook after `org-persist-write-all'.
+  (add-hook 'kill-emacs-hook #'org-persist-gc))
 
 (add-hook 'after-init-hook #'org-persist-load-all)
 

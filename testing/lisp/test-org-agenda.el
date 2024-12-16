@@ -598,7 +598,7 @@ DEADLINE: " (cdr timestamp))))
   (dolist (org-agenda-skip-scheduled-repeats-after-deadline '(nil t))
     (org-test-at-time "2024-01-01 8:00"
       (org-test-with-temp-text-in-file "
-* TODO Do me every day before Jan, 12th (included)
+* TODO Do me every day until Jan, 5th (inclusive)
 SCHEDULED: <2024-01-03 Wed +1d> DEADLINE: <2024-01-05 Fri>
 "
         (let ((org-agenda-span 'week)
@@ -614,15 +614,15 @@ SCHEDULED: <2024-01-03 Wed +1d> DEADLINE: <2024-01-05 Fri>
                (string-match-p
                 "Week-agenda (W01):
 Monday      1 January 2024 W01
-  [^:]+:In   4 d.:  TODO Do me every day before Jan, 12th (included)
+  [^:]+:In   4 d.:  TODO Do me every day until Jan, 5th (inclusive)
 Tuesday     2 January 2024
 Wednesday   3 January 2024
-  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+  [^:]+:Scheduled:  TODO Do me every day until Jan, 5th (inclusive)
 Thursday    4 January 2024
-  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+  [^:]+:Scheduled:  TODO Do me every day until Jan, 5th (inclusive)
 Friday      5 January 2024
-  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
-  [^:]+:Deadline:   TODO Do me every day before Jan, 12th (included)
+  [^:]+:Scheduled:  TODO Do me every day until Jan, 5th (inclusive)
+  [^:]+:Deadline:   TODO Do me every day until Jan, 5th (inclusive)
 Saturday    6 January 2024
 Sunday      7 January 2024"
                 (buffer-string)))
@@ -631,19 +631,19 @@ Sunday      7 January 2024"
              (string-match-p
               "Week-agenda (W01):
 Monday      1 January 2024 W01
-  [^:]+:In   4 d.:  TODO Do me every day before Jan, 12th (included)
+  [^:]+:In   4 d.:  TODO Do me every day until Jan, 5th (inclusive)
 Tuesday     2 January 2024
 Wednesday   3 January 2024
-  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+  [^:]+:Scheduled:  TODO Do me every day until Jan, 5th (inclusive)
 Thursday    4 January 2024
-  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+  [^:]+:Scheduled:  TODO Do me every day until Jan, 5th (inclusive)
 Friday      5 January 2024
-  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
-  [^:]+:Deadline:   TODO Do me every day before Jan, 12th (included)
+  [^:]+:Scheduled:  TODO Do me every day until Jan, 5th (inclusive)
+  [^:]+:Deadline:   TODO Do me every day until Jan, 5th (inclusive)
 Saturday    6 January 2024
-  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)
+  [^:]+:Scheduled:  TODO Do me every day until Jan, 5th (inclusive)
 Sunday      7 January 2024
-  [^:]+:Scheduled:  TODO Do me every day before Jan, 12th (included)"
+  [^:]+:Scheduled:  TODO Do me every day until Jan, 5th (inclusive)"
               (buffer-string))))))
       (org-test-agenda--kill-all-agendas))))
 
@@ -690,43 +690,65 @@ Sunday      7 January 2024
 (ert-deftest test-org-agenda/skip-deadline-prewarning-if-scheduled ()
   "Test `org-agenda-skip-deadline-prewarning-if-scheduled'."
   (org-test-at-time
-   "2024-01-15"
-   (let ((org-agenda-skip-deadline-prewarning-if-scheduled t))
-     (org-test-agenda-with-agenda
-      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+      "2024-01-15"
+    (let ((org-agenda-skip-deadline-prewarning-if-scheduled t))
+      (org-test-agenda-with-agenda
+       "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+       (org-agenda-list nil nil 1)
+       (should-not (search-forward "In " nil t))))
+    (let ((org-agenda-skip-deadline-prewarning-if-scheduled 10))
+      (org-test-agenda-with-agenda
+       "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+       (org-agenda-list nil nil 1)
+       (should (search-forward "In " nil t))))
+    ;; Custom prewarning cookie "-3d", so there should be no warning anyway.
+    (let ((org-agenda-skip-deadline-prewarning-if-scheduled 10))
+      (org-test-agenda-with-agenda
+       "* TODO foo\nDEADLINE: <2024-01-20 Sat -3d> SCHEDULED: <2024-01-19 Fri>"
+       (org-agenda-list nil nil 1)
+       (should-not (search-forward "In " nil t))))
+    (let ((org-agenda-skip-deadline-prewarning-if-scheduled 3))
+      (org-test-agenda-with-agenda
+       "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+       (org-agenda-list nil nil 1)
+       (should-not (search-forward "In " nil t))))
+    (let ((org-agenda-skip-deadline-prewarning-if-scheduled nil))
+      (org-test-agenda-with-agenda
+       "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+       (org-agenda-list nil nil 1)
+       (should (search-forward "In " nil t))))
+    (let ((org-agenda-skip-deadline-prewarning-if-scheduled 'pre-scheduled))
+      (org-test-agenda-with-agenda
+       "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-16 Tue>"
+       (org-agenda-list nil nil 1)
+       (should-not (search-forward "In " nil t))))
+    (let ((org-agenda-skip-deadline-prewarning-if-scheduled 'pre-scheduled))
+      (org-test-agenda-with-agenda
+       "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-15 Mon>"
+       (org-agenda-list nil nil 1)
+       (should (search-forward "In " nil t))))))
+
+(ert-deftest test-org-agenda/diary-timestamp ()
+  "Test diary timestamp handling."
+  (org-test-at-time
+      "2024-01-15"
+    (org-test-agenda-with-agenda
+        "* TODO foo\n<%%(diary-date 01 15 2024)>"
       (org-agenda-list nil nil 1)
-      (should-not (search-forward "In " nil t))))
-   (let ((org-agenda-skip-deadline-prewarning-if-scheduled 10))
-     (org-test-agenda-with-agenda
-      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+      (should (search-forward "foo" nil t)))
+    (org-test-agenda-with-agenda
+        "* TODO foo\n<%%(diary-date 02 15 2024)>"
       (org-agenda-list nil nil 1)
-      (should (search-forward "In " nil t))))
-   ;; Custom prewarning cookie "-3d", so there should be no warning anyway.
-   (let ((org-agenda-skip-deadline-prewarning-if-scheduled 10))
-     (org-test-agenda-with-agenda
-      "* TODO foo\nDEADLINE: <2024-01-20 Sat -3d> SCHEDULED: <2024-01-19 Fri>"
+      (should-not (search-forward "foo" nil t)))
+    ;; Test time and time ranges in diary timestamps.
+    (org-test-agenda-with-agenda
+        "* TODO foo\n<%%(diary-date 01 15 2024) 12:00>"
       (org-agenda-list nil nil 1)
-      (should-not (search-forward "In " nil t))))
-   (let ((org-agenda-skip-deadline-prewarning-if-scheduled 3))
-     (org-test-agenda-with-agenda
-      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
+      (should (search-forward "12:00" nil t)))
+    (org-test-agenda-with-agenda
+        "* TODO foo\n<%%(diary-date 01 15 2024) 12:00-14:00>"
       (org-agenda-list nil nil 1)
-      (should-not (search-forward "In " nil t))))
-   (let ((org-agenda-skip-deadline-prewarning-if-scheduled nil))
-     (org-test-agenda-with-agenda
-      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-19 Fri>"
-      (org-agenda-list nil nil 1)
-      (should (search-forward "In " nil t))))
-   (let ((org-agenda-skip-deadline-prewarning-if-scheduled 'pre-scheduled))
-     (org-test-agenda-with-agenda
-      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-16 Tue>"
-      (org-agenda-list nil nil 1)
-      (should-not (search-forward "In " nil t))))
-   (let ((org-agenda-skip-deadline-prewarning-if-scheduled 'pre-scheduled))
-     (org-test-agenda-with-agenda
-      "* TODO foo\nDEADLINE: <2024-01-20 Sat> SCHEDULED: <2024-01-15 Mon>"
-      (org-agenda-list nil nil 1)
-      (should (search-forward "In " nil t))))))
+      (should (search-forward "12:00-14:00" nil t)))))
 
 
 ;; agenda redo

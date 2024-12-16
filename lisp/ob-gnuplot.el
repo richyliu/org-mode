@@ -45,7 +45,6 @@
 
 (require 'ob)
 (require 'org-macs)
-(require 'ox-ascii)
 
 (declare-function org-time-string-to-time "org" (s))
 (declare-function orgtbl-to-generic "org-table" (table params))
@@ -210,7 +209,7 @@ This function is called by `org-babel-execute-src-block'."
           (let ((script-file (org-babel-temp-file "gnuplot-script-")))
             (with-temp-file script-file
               (insert (concat body "\n")))
-            (message "gnuplot \"%s\"" script-file)
+            (unless noninteractive (message "gnuplot \"%s\"" script-file))
             (setq output
                   (shell-command-to-string
 		   (format
@@ -219,7 +218,7 @@ This function is called by `org-babel-execute-src-block'."
 		     script-file
 		     (if (member system-type '(cygwin windows-nt ms-dos))
 			 t nil)))))
-            (message "%s" output))
+            (unless noninteractive (message "%s" output)))
         (with-temp-buffer
           (insert (concat body "\n"))
           (gnuplot-mode)
@@ -232,7 +231,7 @@ This function is called by `org-babel-execute-src-block'."
   "Prepare SESSION according to the header arguments in PARAMS."
   (let* ((session (org-babel-gnuplot-initiate-session session))
          (var-lines (org-babel-variable-assignments:gnuplot params)))
-    (message "%S" session)
+    (unless noninteractive (message "%S" session))
     (org-babel-comint-in-buffer session
       (dolist (var-line  var-lines)
 	(insert var-line)
@@ -295,6 +294,8 @@ then create one.  Return the initialized session.  The current
   "Export TABLE to DATA-FILE in a format readable by gnuplot.
 Pass PARAMS through to `orgtbl-to-generic' when exporting TABLE."
   (require 'ox-org)
+  (require 'ox-ascii)
+  (declare-function org-export-create-backend "ox")
   (with-temp-file data-file
     (insert (let ((org-babel-gnuplot-timestamp-fmt
 		   (or (plist-get params :timefmt) "%Y-%m-%d-%H:%M:%S"))

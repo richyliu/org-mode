@@ -3,7 +3,7 @@
 ;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -113,13 +113,11 @@ Version mismatch is commonly encountered in the following situations:
 (declare-function org-fold-next-visibility-change "org-fold" (&optional pos limit ignore-hidden-p previous-p))
 (declare-function org-fold-core-with-forced-fontification "org-fold" (&rest body))
 (declare-function org-fold-folded-p "org-fold" (&optional pos limit ignore-hidden-p previous-p))
-(declare-function string-collate-lessp "org-compat" (s1 s2 &optional locale ignore-case))
 (declare-function org-time-convert-to-list "org-compat" (time))
 (declare-function org-buffer-text-pixel-width "org-compat" ())
 
 (defvar org-ts-regexp0)
 (defvar ffap-url-regexp)
-(defvar org-fold-core-style)
 
 
 ;;; Macros
@@ -269,6 +267,7 @@ This function is only useful when called from Agenda buffer."
             (unless modified
               (restore-buffer-modified-p nil))))))))
 
+;;;###autoload
 (defmacro org-element-with-disabled-cache (&rest body)
   "Run BODY without active org-element-cache."
   (declare (debug (form body)) (indent 0))
@@ -290,6 +289,31 @@ FILE is the file name passed to `find-buffer-visiting'."
   (let ((buf (or (get-file-buffer file)
 		 (find-buffer-visiting file))))
     (org-base-buffer buf)))
+
+(defvar-local org-file-buffer-created nil
+  "Non-nil when current buffer is created from `org-with-file-buffer'.
+The value is FILE argument passed to `org-with-file-buffer'.")
+(defmacro org-with-file-buffer (file &rest body)
+  "Evaluate BODY with current buffer visiting FILE.
+When no live buffer is visiting FILE, create one and kill after
+evaluating BODY.
+During evaluation, when the buffer was created, `org-file-buffer-created'
+variable is set to FILE."
+  (declare (debug (form body)) (indent 1))
+  (org-with-gensyms (mark-function filename buffer)
+    `(let ((,mark-function (lambda () (setq-local org-file-buffer-created ,file)))
+           (,filename ,file)
+           ,buffer)
+       (add-hook 'find-file-hook ,mark-function)
+       (unwind-protect
+           (progn
+             (setq ,buffer (find-file-noselect ,filename t))
+             (with-current-buffer ,buffer
+               (prog1 (progn ,@body)
+                 (with-current-buffer ,buffer
+                   (when (equal ,filename org-file-buffer-created)
+                     (kill-buffer))))))
+         (remove-hook 'find-file-hook ,mark-function)))))
 
 (defun org-fit-window-to-buffer (&optional window max-height min-height
                                            shrink-only)
@@ -548,8 +572,10 @@ is selected, only the bare key is returned."
 		   ;; selection prefix.
 		   ((assoc current specials) (throw 'exit current))
 		   (t (error "No entry available")))))))
-        (quit-window)
-	(when buffer (kill-buffer buffer))))))
+        (when buffer
+          (when-let ((window (get-buffer-window buffer t)))
+            (quit-window 'kill window))
+          (kill-buffer buffer))))))
 
 
 ;;; List manipulation
@@ -789,7 +815,7 @@ Match at beginning of line when WITH-BOL is non-nil."
   (and (not (bobp))
        (save-excursion
 	 (forward-line n)
-         (skip-chars-forward "[ \t]")
+         (skip-chars-forward " \t")
          (eolp))))
 
 (defun org-previous-line-empty-p ()
@@ -956,20 +982,67 @@ return nil."
 
 ;;; String manipulation
 
-(defun org-string< (a b)
-  (string-collate-lessp a b))
+(defcustom org-sort-function #'string-collate-lessp
+  "Function used to compare strings when sorting.
+This function affects how Org mode sorts headlines, agenda items,
+table lines, etc.
 
-(defun org-string<= (a b)
-  (or (string= a b) (string-collate-lessp a b)))
+The function must accept either 2 or 4 arguments: strings to compare
+and, optionally, LOCALE and IGNORE-CASE - locale name and flag to make
+comparison case-insensitive.
 
-(defun org-string>= (a b)
-  (not (string-collate-lessp a b)))
+The default value uses sorting rules according to OS language.  Users
+who want to make sorting language-independent, may customize the value
+to `org-sort-function-fallback'.
 
-(defun org-string> (a b)
+Note that some string sorting rules are known to be not accurate on
+MacOS.  See https://debbugs.gnu.org/cgi/bugreport.cgi?bug=59275.
+MacOS users may customize the value to
+`org-sort-function-fallback'."
+  :group 'org
+  :package-version '(Org . "9.7")
+  :type '(choice
+          (const :tag "According to OS language" string-collate-lessp)
+          (const :tag "Using string comparison" org-sort-function-fallback)
+          (function :tag "Custom function")))
+
+(defun org-sort-function-fallback (a b &optional _ ignore-case)
+  "Return non-nil when downcased string A < string B.
+Use `compare-strings' for comparison.  Honor IGNORE-CASE."
+  (let ((ans (compare-strings a nil nil b nil nil ignore-case)))
+    (cond
+     ((and (numberp ans) (< ans 0)) t)
+     (t nil))))
+
+(defun org-string< (a b &optional locale ignore-case)
+  "Return non-nil when string A < string B.
+LOCALE is the locale name.  IGNORE-CASE, when non-nil, makes comparison
+ignore case."
+  (if (= 4 (cdr (func-arity org-sort-function)))
+      (funcall org-sort-function a b locale ignore-case)
+    (funcall org-sort-function a b)))
+
+(defun org-string<= (a b &optional locale ignore-case)
+  "Return non-nil when string A <= string B.
+LOCALE is the locale name.  IGNORE-CASE, when non-nil, makes comparison
+ignore case."
+  (or (string= a b) (org-string< a b locale ignore-case)))
+
+(defun org-string>= (a b &optional locale ignore-case)
+  "Return non-nil when string A >= string B.
+LOCALE is the locale name.  IGNORE-CASE, when non-nil, makes comparison
+ignore case."
+  (not (org-string< a b locale ignore-case)))
+
+(defun org-string> (a b &optional locale ignore-case)
+  "Return non-nil when string A > string B.
+LOCALE is the locale name.  IGNORE-CASE, when non-nil, makes comparison
+ignore case."
   (and (not (string= a b))
-       (not (string-collate-lessp a b))))
+       (not (org-string< a b locale ignore-case))))
 
 (defun org-string<> (a b)
+  "Return non-nil when string A and string B are not equal."
   (not (string= a b)))
 
 (defsubst org-trim (s &optional keep-lead)
@@ -1155,7 +1228,7 @@ This function forces `tab-width' value because it is used as a part of
 the parser, to ensure parser consistency when calculating list
 indentation."
   `(progn
-     (unless (= 8 tab-width) (error "Tab width in Org files must be 8, not %d.  Please adjust your `tab-width' settings for Org mode." tab-width))
+     (unless (= 8 tab-width) (error "Tab width in Org files must be 8, not %d.  Please adjust your `tab-width' settings for Org mode" tab-width))
      (string-width (buffer-substring-no-properties
                     (line-beginning-position) (point)))))
 
@@ -1217,6 +1290,10 @@ Assumes that s is a single line, starting in column 0."
 		 (match-beginning 0)) ?\ )
 	     t t s)))
   s)
+
+(defun org-remove-blank-lines (s)
+  "Remove blank lines in S."
+  (replace-regexp-in-string (rx "\n" (1+ (0+ space) "\n")) "\n" s))
 
 (defun org-wrap (string &optional width lines)
   "Wrap string to either a number of lines, or a width in characters.
@@ -1697,6 +1774,43 @@ The error string will be appended with ERR-MSG, when it is a string."
 			     (?O . ,(shell-quote-argument output))))))
          (mapcar (lambda (command) (format-spec command spec)) process)))
       (_ (error "No valid command to process %S%s" source err-msg)))))
+
+(defun org-display-buffer-split (buffer alist)
+  "Display BUFFER in the current frame split in two parts.
+The frame will display two buffers - current buffer and BUFFER.
+ALIST is an association list of action symbols and values.  See
+Info node `(elisp) Buffer Display Action Alists' for details of
+such alists.
+
+Use `display-buffer-in-direction' internally.
+
+This is an action function for buffer display, see Info
+node `(elisp) Buffer Display Action Functions'.  It should be
+called only by `display-buffer' or a function directly or
+indirectly called by the latter."
+  (let ((window-configuration (current-window-configuration)))
+    (ignore-errors (delete-other-windows))
+    (or (display-buffer-in-direction buffer alist)
+        (display-buffer-pop-up-window buffer alist)
+        (prog1 nil
+          (set-window-configuration window-configuration)))))
+
+(defun org-display-buffer-in-window (buffer alist)
+  "Display BUFFER in specific window.
+The window is defined according to the `window' slot in the ALIST.
+Then `same-frame' slot in the ALIST is set, only display buffer when
+window is present in the current frame.
+
+This is an action function for buffer display, see Info
+node `(elisp) Buffer Display Action Functions'.  It should be
+called only by `display-buffer' or a function directly or
+indirectly called by the latter."
+  (let ((window (alist-get 'window alist)))
+    (when (and window
+               (window-live-p window)
+               (or (not (alist-get 'same-frame alist))
+                   (eq (window-frame) (window-frame window))))
+      (window--display-buffer buffer window 'reuse alist))))
 
 (provide 'org-macs)
 

@@ -24,7 +24,7 @@
 ;; The `basic' citation processor provides "activate", "follow", "export" and
 ;; "insert" capabilities.
 
-;; "activate" capability re-uses default fontification, but provides additional
+;; "activate" capability reuses default fontification, but provides additional
 ;; features on both correct and wrong keys according to the bibliography
 ;; defined in the document.
 
@@ -680,7 +680,7 @@ INFO is the export state as a property list."
 INFO is the export state, as a property list."
   (and field
        (lambda (a b)
-         (string-collate-lessp
+         (org-string<
           (org-cite-basic--get-field field a info 'raw)
           (org-cite-basic--get-field field b info 'raw)
           nil t))))

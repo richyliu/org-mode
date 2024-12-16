@@ -3,7 +3,7 @@
 ;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 
 ;; This file is part of GNU Emacs.
 
@@ -19,6 +19,8 @@
 
 ;; You should have received a copy of the GNU General Public License
 ;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
+
+;;; Commentary:
 
 ;;; Code:
 
@@ -215,12 +217,12 @@ position or nil."
 	(help (or help org-goto-help)))
     (save-excursion
       (save-window-excursion
-	(delete-other-windows)
 	(and (get-buffer "*org-goto*") (kill-buffer "*org-goto*"))
-	(pop-to-buffer-same-window
-	 (condition-case nil
+        (pop-to-buffer
+         (condition-case nil
 	     (make-indirect-buffer (current-buffer) "*org-goto*" t)
-	   (error (make-indirect-buffer (current-buffer) "*org-goto*" t))))
+	   (error (make-indirect-buffer (current-buffer) "*org-goto*" t)))
+         '(org-display-buffer-full-frame))
 	(let (temp-buffer-show-function temp-buffer-show-hook)
 	  (with-output-to-temp-buffer "*Org Help*"
 	    (princ (format help (if org-goto-auto-isearch
@@ -238,8 +240,10 @@ position or nil."
 	(let (org-special-ctrl-a/e) (org-beginning-of-line))
 	(message "Select location and press RET")
 	(use-local-map org-goto-map)
-	(recursive-edit)))
-    (kill-buffer "*org-goto*")
+	(unwind-protect (recursive-edit)
+          (when-let ((window (get-buffer-window "*Org Help*" t)))
+            (quit-window 'kill window)))))
+    (when (get-buffer "*org-goto*") (kill-buffer "*org-goto*"))
     (cons org-goto-selected-point org-goto-exit-command)))
 
 ;;;###autoload

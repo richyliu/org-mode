@@ -160,7 +160,7 @@
 ;; If one wants to search invisible text without using the provided
 ;; functions, it is important to keep in mind that 'invisible text
 ;; property may have multiple possible values (not just nil and
-;; t). Hence, (next-single-char-property-change pos 'invisible) is not
+;; t).  Hence, (next-single-char-property-change pos 'invisible) is not
 ;; guaranteed to return the boundary of invisible/visible text.
 
 ;;; Interactive searching inside folded text (via isearch)
@@ -172,7 +172,7 @@
 
 ;; The isearch behavior is controlled on per-folding-spec basis by
 ;; setting `isearch-open' and `isearch-ignore' folding spec
-;; properties.  The the docstring of `org-fold-core--specs' for more details.
+;; properties.  See the docstring of `org-fold-core--specs' for more details.
 
 ;;; Handling edits inside folded text
 
@@ -290,7 +290,7 @@ generally less error-prone with regard to third-party packages.
 
 Important: This variable must be set before loading Org."
   :group 'org
-  :package-version '(Org . "9.6")
+  :package-version '(Org . "9.7")
   :type '(choice
           (const :tag "Overlays" overlays)
           (const :tag "Text properties" text-properties)))
@@ -381,6 +381,9 @@ The following properties are known:
                        `buffer-invisibility-spec' will be used as is.
                        Note that changing this property from nil to t may
                        clear the setting in `buffer-invisibility-spec'.
+- :font-lock        :: non-nil means that newlines after the fold should
+                       be re-fontified upon folding/unfolding.  See
+                       `org-activate-folds'.
 - :alias            :: a list of aliases for the SPEC-SYMBOL.
 - :fragile          :: Must be a function accepting two arguments.
                        Non-nil means that changes in region may cause
@@ -554,7 +557,10 @@ and the setup appears to be created for different buffer,
 copy the old invisibility state into new buffer-local text properties,
 unless RETURN-ONLY is non-nil."
   (if (eq org-fold-core-style 'overlays)
-      (org-fold-core-get-folding-property-symbol spec nil 'global)
+      (or (gethash (cons 'global spec) org-fold-core--property-symbol-cache)
+          (puthash (cons 'global spec)
+                   (org-fold-core-get-folding-property-symbol spec nil 'global)
+                   org-fold-core--property-symbol-cache))
     (let* ((buf (or buffer (current-buffer))))
       ;; Create unique property symbol for SPEC in BUFFER
       (let ((local-prop (or (gethash (cons buf spec) org-fold-core--property-symbol-cache)
@@ -575,15 +581,6 @@ unless RETURN-ONLY is non-nil."
               ;; would contain folding properties, which are not
               ;; matching the generated `local-prop'.
 	      (unless (member local-prop (cdr (assq 'invisible char-property-alias-alist)))
-                ;; Add current buffer to the list of indirect buffers in the base buffer.
-                (when (buffer-base-buffer)
-                  (with-current-buffer (buffer-base-buffer)
-                    (setq-local org-fold-core--indirect-buffers
-                                (let (bufs)
-                                  (org-fold-core-cycle-over-indirect-buffers
-                                    (push (current-buffer) bufs))
-                                  (push buf bufs)
-                                  (delete-dups bufs)))))
                 ;; Copy all the old folding properties to preserve the folding state
                 (with-silent-modifications
                   (dolist (old-prop (cdr (assq 'invisible char-property-alias-alist)))
@@ -642,6 +639,16 @@ unless RETURN-ONLY is non-nil."
   "Copy and decouple folding state in a newly created indirect buffer.
 This function is mostly intended to be used in
 `clone-indirect-buffer-hook'."
+  ;; Add current buffer to the list of indirect buffers in the base buffer.
+  (when (buffer-base-buffer)
+    (let ((new-buffer (current-buffer)))
+      (with-current-buffer (buffer-base-buffer)
+        (setq-local org-fold-core--indirect-buffers
+                    (let (bufs)
+                      (org-fold-core-cycle-over-indirect-buffers
+                        (push (current-buffer) bufs))
+                      (push new-buffer bufs)
+                      (delete-dups bufs))))))
   (when (and (buffer-base-buffer)
              (eq org-fold-core-style 'text-properties)
              (not (memql 'ignore-indirect org-fold-core--optimise-for-huge-buffers)))
@@ -699,7 +706,7 @@ The folding spec properties will be set to PROPERTIES (see
     (let* ((full-properties (mapcar (lambda (prop) (cons prop (cdr (assq prop properties))))
                                     '( :visible :ellipsis :isearch-ignore
                                        :global :isearch-open :front-sticky
-                                       :rear-sticky :fragile :alias)))
+                                       :rear-sticky :fragile :alias :font-lock)))
            (full-spec (cons spec full-properties)))
       (add-to-list 'org-fold-core--specs full-spec append)
       (mapc (lambda (prop-cons) (org-fold-core-set-folding-spec-property spec (car prop-cons) (cdr prop-cons) 'force)) full-properties)
@@ -1040,18 +1047,19 @@ If SPEC-OR-ALIAS is omitted and FLAG is nil, unfold everything in the region."
        ;; last as per Emacs defaults.  This makes :extend faces span
        ;; past the ellipsis.  See bug#65896.  The face properties are
        ;; assigned via `org-activate-folds'.
-       (when (equal ?\n (char-after from))
-         (font-lock-flush from (1+ from)))
-       (when (equal ?\n (char-after to))
-         (font-lock-flush to (1+ to)))
-       (dolist (region (org-fold-core-get-regions :from from :to to :specs spec))
-         (when (equal ?\n (char-after (cadr region)))
-           (font-lock-flush (cadr region) (1+ (cadr region))))
-         ;; Re-fontify beginning of the fold - we may
-         ;; unfold inside an existing fold, with FROM begin a newline
-         ;; after spliced fold.
-         (when (equal ?\n (char-after (car region)))
-           (font-lock-flush (car region) (1+ (car region)))))
+       (when (or (not spec) (org-fold-core-get-folding-spec-property spec :font-lock))
+         (when (equal ?\n (char-after from))
+           (font-lock-flush from (1+ from)))
+         (when (equal ?\n (char-after to))
+           (font-lock-flush to (1+ to)))
+         (dolist (region (org-fold-core-get-regions :from from :to to :specs spec))
+           (when (equal ?\n (char-after (cadr region)))
+             (font-lock-flush (cadr region) (1+ (cadr region))))
+           ;; Re-fontify beginning of the fold - we may
+           ;; unfold inside an existing fold, with FROM begin a newline
+           ;; after spliced fold.
+           (when (equal ?\n (char-after (car region)))
+             (font-lock-flush (car region) (1+ (car region))))))
        (when (eq org-fold-core-style 'overlays)
          (if org-fold-core--keep-overlays
              (mapc
@@ -1068,8 +1076,9 @@ If SPEC-OR-ALIAS is omitted and FLAG is nil, unfold everything in the region."
                     (when org-fold-core--isearch-active
                       (cl-pushnew ov org-fold-core--isearch-overlays)))))
               (overlays-in from to))
-           (remove-overlays from to 'org-invisible spec)
-           (remove-overlays from to 'invisible spec)))
+           (when spec
+             (remove-overlays from to 'org-invisible spec)
+             (remove-overlays from to 'invisible spec))))
        (if flag
 	   (if (not spec)
                (error "Calling `org-fold-core-region' with missing SPEC")
@@ -1086,8 +1095,7 @@ If SPEC-OR-ALIAS is omitted and FLAG is nil, unfold everything in the region."
                    (overlay-put o 'invisible spec)
                    ;; Preserve priority.
                    (overlay-put o 'priority (length (member spec (org-fold-core-folding-spec-list))))
-                   (overlay-put o 'isearch-open-invisible #'org-fold-core--isearch-show)
-                   (overlay-put o 'isearch-open-invisible-temporary #'org-fold-core--isearch-show-temporary))
+                   (overlay-put o 'isearch-open-invisible #'org-fold-core--isearch-show))
 	       (put-text-property from to (org-fold-core--property-symbol-get-create spec) spec)
 	       (put-text-property from to 'isearch-open-invisible #'org-fold-core--isearch-show)
 	       (put-text-property from to 'isearch-open-invisible-temporary #'org-fold-core--isearch-show-temporary)
@@ -1114,9 +1122,10 @@ If SPEC-OR-ALIAS is omitted and FLAG is nil, unfold everything in the region."
 	     (remove-text-properties from to (list (org-fold-core--property-symbol-get-create spec) nil)))))
        ;; Re-calculate trailing faces for all the folds revealed
        ;; by unfolding or created by folding.
-       (dolist (region (org-fold-core-get-regions :from from :to to :specs spec))
-         (when (equal ?\n (char-after (cadr region)))
-           (font-lock-flush (cadr region) (1+ (cadr region)))))))))
+       (when (or (not spec) (org-fold-core-get-folding-spec-property spec :font-lock))
+         (dolist (region (org-fold-core-get-regions :from from :to to :specs spec))
+           (when (equal ?\n (char-after (cadr region)))
+             (font-lock-flush (cadr region) (1+ (cadr region))))))))))
 
 (cl-defmacro org-fold-core-regions (regions &key override clean-markers relative)
   "Fold every region in REGIONS list in current buffer.
@@ -1163,7 +1172,7 @@ because otherwise all these markers will point to nowhere."
 This is used to allow searching in regions hidden via text properties.
 As for [2020-05-09 Sat], Isearch only has special handling of hidden overlays.
 Any text hidden via text properties is not revealed even if `search-invisible'
-is set to `t'.")
+is set to t.")
 
 (defvar-local org-fold-core--isearch-local-regions (make-hash-table :test 'equal)
   "Hash table storing temporarily shown folds from isearch matches.")
@@ -1237,7 +1246,9 @@ This function is intended to be used as `isearch-filter-predicate'."
     ;; FIXME: Reveal the match (usually point, but may sometimes go beyond the region).
     (when (< beg (point) end)
       (funcall org-fold-core-isearch-open-function (point)))
-    (org-fold-core-region beg end nil)))
+    (if (overlayp overlay-or-region)
+        (delete-overlay overlay-or-region)
+      (org-fold-core-region beg end nil))))
 
 (defun org-fold-core--isearch-show-temporary (region hide-p)
   "Temporarily reveal text in REGION.

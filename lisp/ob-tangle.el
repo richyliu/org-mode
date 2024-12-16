@@ -184,8 +184,7 @@ replace contents otherwise."
   :safe t)
 
 (defun org-babel-find-file-noselect-refresh (file)
-  "Find file ensuring that the latest changes on disk are
-represented in the file."
+  "Find file ensuring that the latest changes on disk are represented in the file."
   (find-file-noselect file 'nowarn)
   (with-current-buffer (get-file-buffer file)
     (revert-buffer t t t)))
@@ -222,14 +221,10 @@ source code blocks by languages matching a regular expression.
 
 Return list of the tangled file names."
   (interactive "fFile to tangle: \nP")
-  (let* ((visited (find-buffer-visiting file))
-         (buffer (or visited (find-file-noselect file))))
-    (prog1
-        (with-current-buffer buffer
-          (org-with-wide-buffer
-           (mapcar #'expand-file-name
-                   (org-babel-tangle nil target-file lang-re))))
-      (unless visited (kill-buffer buffer)))))
+  (org-with-file-buffer file
+    (org-with-wide-buffer
+     (mapcar #'expand-file-name
+             (org-babel-tangle nil target-file lang-re)))))
 
 (defun org-babel-tangle-publish (_ filename pub-dir)
   "Tangle FILENAME and place the results in PUB-DIR."
@@ -390,13 +385,13 @@ The following forms are currently recognized:
    ((integerp mode)
     (if (string-match-p "^[0-7][0-7][0-7]$" (format "%o" mode))
         mode
-      (user-error "%1$o is not a valid file mode octal. \
+      (user-error "%1$o is not a valid file mode octal.  \
 Did you give the decimal value %1$d by mistake?" mode)))
    ((not (stringp mode))
-    (error "File mode %S not recognized as a valid format." mode))
+    (error "File mode %S not recognized as a valid format" mode))
    ((string-match-p "^o0?[0-7][0-7][0-7]$" mode)
     (string-to-number (replace-regexp-in-string "^o" "" mode) 8))
-   ((string-match-p "^[ugoa]*\\(?:[+-=][rwxXstugo]*\\)+\\(,[ugoa]*\\(?:[+-=][rwxXstugo]*\\)+\\)*$" mode)
+   ((string-match-p "^[ugoa]*\\(?:[+=-][rwxXstugo]*\\)+\\(,[ugoa]*\\(?:[+=-][rwxXstugo]*\\)+\\)*$" mode)
     ;; Match regexp taken from `file-modes-symbolic-to-number'.
     (file-modes-symbolic-to-number mode org-babel-tangle-default-file-mode))
    ((string-match-p "^[r-][w-][xs-][r-][w-][xs-][r-][w-][x-]$" mode)
@@ -404,7 +399,7 @@ Did you give the decimal value %1$d by mistake?" mode)))
                                            ",g=" (delete ?- (substring mode 3 6))
                                            ",o=" (delete ?- (substring mode 6 9)))
                                    0))
-   (t (error "File mode %S not recognized as a valid format. See `org-babel-interpret-file-mode'." mode))))
+   (t (error "File mode %S not recognized as a valid format.  See `org-babel-interpret-file-mode'" mode))))
 
 (defun org-babel-tangle-clean ()
   "Remove comments inserted by `org-babel-tangle'.

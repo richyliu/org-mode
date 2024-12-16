@@ -64,7 +64,23 @@
 	 (var-names (mapcar #'symbol-name org--var-syms)))
     (mapc
      (lambda (pair)
-       (calc-push-list (list (cdr pair)))
+       (let ((val (cdr pair)))
+         (calc-push-list
+          (list
+           (cond
+            ;; For a vector, Calc follows the format (vec 1 2 3 ...)  so
+            ;; a matrix becomes (vec (vec 1 2 3) (vec 4 5 6) ...).  See
+            ;; the comments in "Arithmetic routines." section of
+            ;; calc.el.
+            ((listp val)
+             (cons 'vec
+                   (if (null (cdr val))
+                       (car val)
+                     (mapcar (lambda (x) (if (listp x) (cons 'vec x) x))
+                             val))))
+            ((numberp val)
+             (math-read-number (number-to-string val)))
+            (t val)))))
        (calc-store-into (car pair)))
      vars)
     (mapc
@@ -99,7 +115,7 @@
      (mapcar #'org-trim
 	     (split-string (org-babel-expand-body:calc body params) "[\n\r]"))))
   (save-excursion
-    (with-current-buffer (get-buffer "*Calculator*")
+    (with-current-buffer "*Calculator*"
       (prog1
           (calc-eval (calc-top 1))
         (calc-pop 1)))))

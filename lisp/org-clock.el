@@ -3,7 +3,7 @@
 ;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -56,6 +56,8 @@
 (declare-function dbus-list-activatable-names "dbus" (&optional bus))
 (declare-function dbus-call-method "dbus" (bus service path interface method &rest args))
 (declare-function dbus-get-property "dbus" (bus service path interface property))
+(declare-function haiku-notifications-notify "haikuselect.c")
+(declare-function android-notifications-notify "androidselect.c")
 
 (defvar org-frame-title-format-backup nil)
 (defvar org-state)
@@ -695,8 +697,11 @@ there is no recent clock to choose from."
 	;; `fit-window-to-buffer'
 	(fit-window-to-buffer nil nil (if (< chl 10) chl (+ 5 chl)))
 	(message (or prompt "Select task for clocking:"))
-	(setq cursor-type nil rpl (read-char-exclusive))
-	(kill-buffer)
+	(unwind-protect (setq cursor-type nil rpl (read-char-exclusive))
+          (when-let ((window (get-buffer-window "*Clock Task Select*" t)))
+            (quit-window 'kill window))
+	  (when (get-buffer "*Clock Task Select*")
+            (kill-buffer "*Clock Task Select*")))
 	(cond
 	 ((eq rpl ?q) nil)
 	 ((eq rpl ?x) nil)
@@ -805,6 +810,7 @@ previous clocking intervals."
 		60)))
     (+ currently-clocked-time (or org-clock-total-time 0))))
 
+;;;###autoload
 (defun org-clock-modify-effort-estimate (&optional value)
   "Add to or set the effort estimate of the item currently being clocked.
 VALUE can be a number of minutes, or a string with format hh:mm or mm.
@@ -881,6 +887,18 @@ use libnotify if available, or fall back on a message."
 	((stringp org-show-notification-handler)
 	 (start-process "emacs-timer-notification" nil
 			org-show-notification-handler notification))
+        ((fboundp 'haiku-notifications-notify)
+         ;; N.B. timeouts are not available under Haiku.
+         (haiku-notifications-notify :title "Org mode message"
+                                     :body notification
+                                     :urgency 'low))
+        ((fboundp 'android-notifications-notify)
+         ;; N.B. timeouts are not available under Haiku or Android.
+         (android-notifications-notify :title "Org mode message"
+                                       :body notification
+                                       ;; Low urgency notifications
+                                       ;; are by default hidden.
+                                       :urgency 'normal))
 	((fboundp 'w32-notification-notify)
 	 (let ((id (w32-notification-notify
 		    :title "Org mode message"
@@ -1411,7 +1429,7 @@ the default behavior."
 	       ((and org-clock-in-switch-to-state
 		     (not (looking-at (concat org-outline-regexp "[ \t]*"
 					      org-clock-in-switch-to-state
-					      "\\>"))))
+					      "\\(?:[ \t]\\|$\\)"))))
 		(org-todo org-clock-in-switch-to-state)))
 	 (setq org-clock-heading (org-clock--mode-line-heading))
 	 (org-clock-find-position org-clock-in-resume)
@@ -1691,11 +1709,7 @@ line and position cursor in that line."
                 ;; if point was right where the clock is inserted.
 	        (insert-before-markers-and-inherit ":" drawer ":\n:END:\n")
 	        (org-indent-region beg (point))
-                (if (eq org-fold-core-style 'text-properties)
-	            (org-fold-region
-	             (line-end-position -1) (1- (point)) t 'drawer)
-                  (org-fold-region
-	           (line-end-position -1) (1- (point)) t 'outline))
+                (org-fold-region (line-end-position -1) (1- (point)) t 'drawer)
 	        (forward-line -1)))))
 	 ;; When a clock drawer needs to be created because of the
 	 ;; number of clock items or simply if it is missing, collect
@@ -1825,7 +1839,7 @@ to, overriding the existing value of `org-clock-out-switch-to-state'."
                              (concat
                               org-outline-regexp "[ \t]*"
 			      org-clock-out-switch-to-state
-			      "\\>"))))
+			      "\\(?:[ \t]\\|$\\)"))))
 		  (org-todo org-clock-out-switch-to-state))))))
 	  (force-mode-line-update)
 	  (message (if remove
@@ -2034,28 +2048,31 @@ PROPNAME lets you set a custom text property instead of :org-clock-minutes."
 	    (cond
 	     ((and (eq element-type 'clock) (match-end 2))
 	      ;; Two time stamps.
-	      (let* ((timestamp (org-element-property :value element))
-		     (ts (float-time
-                          (org-encode-time
-                           (list 0
-                                 (org-element-property :minute-start timestamp)
-                                 (org-element-property :hour-start timestamp)
-                                 (org-element-property :day-start timestamp)
-                                 (org-element-property :month-start timestamp)
-                                 (org-element-property :year-start timestamp)
-                                 nil -1 nil))))
-		     (te (float-time
-                          (org-encode-time
-                           (list 0
-                                 (org-element-property :minute-end timestamp)
-                                 (org-element-property :hour-end timestamp)
-                                 (org-element-property :day-end timestamp)
-                                 (org-element-property :month-end timestamp)
-                                 (org-element-property :year-end timestamp)
-                                 nil -1 nil))))
-		     (dt (- (if tend (min te tend) te)
-			    (if tstart (max ts tstart) ts))))
-	        (when (> dt 0) (cl-incf t1 (floor dt 60)))))
+              (condition-case nil
+	          (let* ((timestamp (org-element-property :value element))
+		         (ts (float-time
+                              (org-encode-time
+                               (list 0
+                                     (org-element-property :minute-start timestamp)
+                                     (org-element-property :hour-start timestamp)
+                                     (org-element-property :day-start timestamp)
+                                     (org-element-property :month-start timestamp)
+                                     (org-element-property :year-start timestamp)
+                                     nil -1 nil))))
+		         (te (float-time
+                              (org-encode-time
+                               (list 0
+                                     (org-element-property :minute-end timestamp)
+                                     (org-element-property :hour-end timestamp)
+                                     (org-element-property :day-end timestamp)
+                                     (org-element-property :month-end timestamp)
+                                     (org-element-property :year-end timestamp)
+                                     nil -1 nil))))
+		         (dt (- (if tend (min te tend) te)
+			        (if tstart (max ts tstart) ts))))
+	            (when (> dt 0) (cl-incf t1 (floor dt 60))))
+                (error
+                 (org-display-warning (format "org-clock-sum: Ignoring invalid %s" (org-current-line-string))))))
 	     ((match-end 4)
 	      ;; A naked time.
 	      (setq t1 (+ t1 (string-to-number (match-string 5))
@@ -3112,8 +3129,9 @@ PROPERTIES: The list properties specified in the `:properties' parameter
 			 (let* ((todo (org-get-todo-state))
 				(tags-list (org-get-tags))
 				(org-scanner-tags tags-list)
-				(org-trust-scanner-tags t))
-			   (funcall matcher todo tags-list nil)))))
+				(org-trust-scanner-tags t)
+                                (level (org-current-level)))
+			   (funcall matcher todo tags-list level)))))
       (goto-char (point-min))
       (setq st t)
       (while (or (and (bobp) (prog1 st (setq st nil))
@@ -3243,7 +3261,7 @@ The details of what will be saved are regulated by the variable
 		   (and (buffer-live-p b)
 			(buffer-file-name b)
 			(or (not org-clock-persist-query-save)
-			    (y-or-n-p (format "Save current clock (%s) "
+                            (y-or-n-p (format "Save current clock (%s)?"
 					      org-clock-heading))))))
 	(insert
 	 (format "(setq org-clock-stored-resume-clock '(%S . %d))\n"
@@ -3283,7 +3301,7 @@ The details of what will be saved are regulated by the variable
 	(`(,(and file (pred file-exists-p)) . ,position)
 	 (with-current-buffer (find-file-noselect file)
 	   (when (or (not org-clock-persist-query-resume)
-		     (y-or-n-p (format "Resume clock (%s) "
+                     (y-or-n-p (format "Resume clock (%s)?"
 				       (save-excursion
 					 (goto-char position)
 					 (org-get-heading t t)))))

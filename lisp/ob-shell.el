@@ -81,7 +81,8 @@ is modified outside the Customize interface."
         (lambda (body params)
 	  (:documentation
            (format "Execute a block of %s commands with Babel." name))
-	  (let ((shell-file-name name))
+	  (let ((explicit-shell-file-name name)
+                (shell-file-name name))
 	    (org-babel-execute:shell body params))))
       (put fname 'definition-name 'org-babel-shell-initialize))
     (defalias (intern (concat "org-babel-variable-assignments:" name))
@@ -91,10 +92,10 @@ variables."
 	      name))
     (funcall (if (fboundp 'defvar-1) #'defvar-1 #'set) ;Emacs-29
              (intern (concat "org-babel-default-header-args:" name))
-             nil)
+             org-babel-default-header-args:shell)
     (funcall (if (fboundp 'defvar-1) #'defvar-1 #'set) ;Emacs-29
              (intern (concat "org-babel-header-args:" name))
-             nil)))
+             org-babel-header-args:shell)))
 
 (defcustom org-babel-shell-names
   '("sh" "bash" "zsh" "fish" "csh" "ash" "dash" "ksh" "mksh" "posh")
@@ -337,7 +338,7 @@ return the value of the last statement in BODY."
                     (org-babel-comint-async-register
                      session
                      (current-buffer)
-                     "ob_comint_async_shell_\\(.+\\)_\\(.+\\)"
+                     "ob_comint_async_shell_\\(start\\|end\\|file\\)_\\(.+\\)"
                      'ob-shell-async-chunk-callback
                      nil)
                     (org-babel-comint-async-delete-dangling-and-eval

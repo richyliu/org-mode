@@ -129,6 +129,30 @@ echo 2<point>
     (if (should (string= ": 1\n: 2\n" (buffer-substring-no-properties (point) (point-max))))
           (kill-buffer session-name)))))
 
+(ert-deftest test-ob-shell/session-async-results ()
+  "Test that async evaluation removes prompt from results."
+  (let* ((session-name "test-ob-shell/session-async-results")
+         (kill-buffer-query-functions nil)
+         (start-time (current-time))
+         (wait-time (time-add start-time 3))
+         uuid-placeholder)
+    (org-test-with-temp-text
+     (concat "#+begin_src sh :session " session-name " :async t
+# print message
+echo \"hello world\"<point>
+#+end_src")
+     (setq uuid-placeholder (org-trim (org-babel-execute-src-block)))
+     (catch 'too-long
+       (while (string-match uuid-placeholder (buffer-string))
+         (progn
+           (sleep-for 0.01)
+           (when (time-less-p wait-time (current-time))
+             (throw 'too-long (ert-fail "Took too long to get result from callback"))))))
+     (search-forward "#+results")
+     (beginning-of-line 2)
+     (if (should (string= ": hello world\n" (buffer-substring-no-properties (point) (point-max))))
+         (kill-buffer session-name)))))
+
 (ert-deftest test-ob-shell/generic-uses-no-arrays ()
   "Test generic serialization of array into a single string."
   (org-test-with-temp-text
@@ -159,6 +183,7 @@ that will return all elements of the array as a single string."
 echo ${array}
 <point>
 #+end_src"
+    (skip-unless (executable-find "bash"))
     (should (equal "one" (org-trim (org-babel-execute-src-block))))))
 
 (ert-deftest test-ob-shell/generic-uses-no-assoc-arrays-simple-map ()
@@ -205,6 +230,10 @@ echo ${table}
 Bash will see a table that contains the first column as the
 'index' of the associative array, and the second column as the
 value. "
+  (skip-unless
+   ;; Old GPLv2 BASH in macOSX does not support associative arrays.
+   (if-let ((bash (executable-find "bash")))
+       (eq 0 (process-file bash nil nil nil "-c" "declare -A assoc_array"))))
   (org-test-with-temp-text
       "#+NAME: sample_mapping_table
 | first  | one   |
@@ -224,6 +253,10 @@ echo ${table[second]}
 
 Bash will see an associative array that contains each row as a single
 string. Bash cannot handle lists in associative arrays."
+  (skip-unless
+   ;; Old GPLv2 BASH in macOSX does not support associative arrays.
+   (if-let ((bash (executable-find "bash")))
+       (eq 0 (process-file bash nil nil nil "-c" "declare -A assoc_array"))))
   (org-test-with-temp-text
       "#+NAME: sample_big_table
 | bread     |  2 | kg |

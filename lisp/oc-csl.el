@@ -134,6 +134,7 @@
 (declare-function citeproc-render-bib "ext:citeproc")
 (declare-function citeproc-hash-itemgetter-from-any "ext:citeproc")
 (declare-function citeproc-add-subbib-filters "ext:citeproc")
+(declare-function citeproc-style-cite-superscript-p "ext:citeproc")
 
 (declare-function org-element-interpret-data "org-element" (data))
 (declare-function org-element-map "org-element" (data types fun &optional info first-match no-recursion with-affiliated))
@@ -422,16 +423,18 @@ Label is in match group 1.")
 
 
 ;;; Internal functions
-;; FIXME: We use `org-require-package' in other places.
-(defun org-cite-csl--barf-without-citeproc ()
-  "Raise an error if Citeproc library is not loaded."
-  (unless (featurep 'citeproc)
-    (error "Citeproc library is not loaded")))
 
 (defun org-cite-csl--note-style-p (info)
   "Non-nil when bibliography style implies wrapping citations in footnotes.
 INFO is the export state, as a property list."
   (citeproc-style-cite-note
+   (citeproc-proc-style
+    (org-cite-csl--processor info))))
+
+(defun org-cite-csl--style-cite-superscript-p (info)
+  "Non-nil when bibliography style produces citations in superscript.
+INFO is the export state, as a property list."
+  (citeproc-style-cite-superscript-p
    (citeproc-proc-style
     (org-cite-csl--processor info))))
 
@@ -681,6 +684,9 @@ INFO is the export state, as a property list."
     (when (and (not footnote) (org-cite-csl--note-style-p info))
       (org-cite-adjust-note citation info)
       (setq footnote (org-cite-wrap-citation citation info)))
+    ;; Remove white space before CITATION when it is in superscript.
+    (when (org-cite-csl--style-cite-superscript-p info)
+      (org-cite--set-previous-post-blank citation 0 info))
     ;; Return structure.
     (apply #'citeproc-citation-create
            `(:note-index
@@ -802,7 +808,7 @@ INFO is the export state, as a property list."
 (defun org-cite-csl-render-citation (citation _style _backend info)
   "Export CITATION object.
 INFO is the export state, as a property list."
-  (org-cite-csl--barf-without-citeproc)
+  (org-require-package 'citeproc)
   (let ((output (cdr (assq citation (org-cite-csl--rendered-citations info)))))
     (if (not (eq 'org (org-cite-csl--output-format info)))
         output
@@ -813,7 +819,7 @@ INFO is the export state, as a property list."
 (defun org-cite-csl-render-bibliography (_keys _files _style props _backend info)
   "Export bibliography.
 INFO is the export state, as a property list."
-  (org-cite-csl--barf-without-citeproc)
+  (org-require-package 'citeproc)
   (pcase-let*  ((format (org-cite-csl--output-format info))
                 (`(,outputs ,parameters) (org-cite-csl--rendered-bibliographies info))
                 (output (cdr (assoc props outputs))))
@@ -851,7 +857,7 @@ INFO is the export state, as a property list."
   "Add \"hanging\" package if missing from LaTeX output.
 OUTPUT is the export document, as a string.  INFO is the export state, as a
 property list."
-  (org-cite-csl--barf-without-citeproc)
+  (org-require-package 'citeproc)
   (if (not (eq 'org-latex (org-cite-csl--output-format info)))
       output
     (with-temp-buffer

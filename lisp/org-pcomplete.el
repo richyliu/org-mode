@@ -4,7 +4,7 @@
 ;;
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;;         John Wiegley <johnw at gnu dot org>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -24,7 +24,7 @@
 
 ;;; Commentary:
 
-;; This library implementes completion support in Org mode buffers.
+;; This library implements completion support in Org mode buffers.
 
 ;;; Code:
 

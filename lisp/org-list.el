@@ -4,7 +4,7 @@
 ;;
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;;	   Bastien Guerry <bzg@gnu.org>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -2979,7 +2979,7 @@ function is being called interactively."
 		   (error "Missing key extractor"))))
 	 (sort-func
 	  (cond
-	   ((= dcst ?a) #'string-collate-lessp)
+	   ((= dcst ?a) #'org-string<)
 	   ((= dcst ?f)
 	    (or compare-func
 		(and interactive?

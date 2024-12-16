@@ -3,7 +3,7 @@
 ;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -102,6 +102,25 @@
 
 
 ;;; Emacs < 29 compatibility
+
+(if (fboundp 'display-buffer-full-frame)
+    (defalias 'org-display-buffer-full-frame #'display-buffer-full-frame)
+  (defun org-display-buffer-full-frame (buffer alist)
+    "Display BUFFER in the current frame, taking the entire frame.
+ALIST is an association list of action symbols and values.  See
+Info node `(elisp) Buffer Display Action Alists' for details of
+such alists.
+
+This is an action function for buffer display, see Info
+node `(elisp) Buffer Display Action Functions'.  It should be
+called only by `display-buffer' or a function directly or
+indirectly called by the latter."
+    (when-let ((window (or (display-buffer-reuse-window buffer alist)
+                           (display-buffer-same-window buffer alist)
+                           (display-buffer-pop-up-window buffer alist)
+                           (display-buffer-use-some-window buffer alist))))
+      (delete-other-windows window)
+      window)))
 
 (defvar org-file-has-changed-p--hash-table (make-hash-table :test #'equal)
   "Internal variable used by `org-file-has-changed-p'.")
@@ -231,6 +250,17 @@ removed."
                       (car default)
                     default)))
      ": ")))
+
+(if (fboundp 'list-of-strings-p)
+    (defalias 'org-list-of-strings-p #'list-of-strings-p)
+  ;; From Emacs subr.el.
+;;;###autoload
+  (defun org-list-of-strings-p (object)
+    "Return t if OBJECT is nil or a list of strings."
+    (declare (pure t) (side-effect-free error-free))
+    (while (and (consp object) (stringp (car object)))
+      (setq object (cdr object)))
+    (null object)))
 
 
 ;;; Emacs < 27.1 compatibility
@@ -630,6 +660,29 @@ Counting starts at 1."
 (define-obsolete-variable-alias 'org-plantuml-executable-args 'org-plantuml-args
   "Org 9.6")
 
+(defvar org-cached-props nil)
+(defvar org-use-property-inheritance)
+(declare-function org-entry-get "org" (epom property &optional inherit literal-nil))
+(declare-function org-entry-properties "org" (&optional epom which))
+(defun org-cached-entry-get (pom property)
+  (if (or (eq t org-use-property-inheritance)
+	  (and (stringp org-use-property-inheritance)
+	       (let ((case-fold-search t))
+		 (string-match-p org-use-property-inheritance property)))
+	  (and (listp org-use-property-inheritance)
+	       (member-ignore-case property org-use-property-inheritance)))
+      ;; Caching is not possible, check it directly.
+      (org-entry-get pom property 'inherit)
+    ;; Get all properties, so we can do complicated checks easily.
+    (cdr (assoc-string property
+		       (or org-cached-props
+			   (setq org-cached-props (org-entry-properties pom)))
+		       t))))
+
+(make-obsolete 'org-cached-entry-get
+               "Performs badly.  Instead use `org-entry-get' with the argument INHERIT set to `selective'"
+               "9.7")
+
 (defconst org-latex-line-break-safe "\\\\[0pt]"
   "Linebreak protecting the following [...].
 
@@ -1009,7 +1062,7 @@ When optional argument ELEMENT is a parsed drawer, as returned by
 When buffer positions BEG and END are provided, hide or show that
 region as a drawer without further ado."
   (declare (obsolete "use `org-hide-drawer-toggle' instead." "9.4"))
-  (if (and beg end) (org-fold-region beg end flag (if (eq org-fold-core-style 'text-properties) 'drawer 'outline))
+  (if (and beg end) (org-fold-region beg end flag 'drawer)
     (let ((drawer
 	   (or element
 	       (and (save-excursion
@@ -1023,7 +1076,7 @@ region as a drawer without further ado."
 	   (save-excursion (goto-char (org-element-end drawer))
 			   (skip-chars-backward " \t\n")
 			   (line-end-position))
-	   flag (if (eq org-fold-core-style 'text-properties) 'drawer 'outline))
+	   flag 'drawer)
 	  ;; When the drawer is hidden away, make sure point lies in
 	  ;; a visible part of the buffer.
 	  (when (invisible-p (max (1- (point)) (point-min)))

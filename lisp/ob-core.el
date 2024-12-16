@@ -22,6 +22,8 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
+;;; Commentary:
+
 ;;; Code:
 
 (require 'org-macs)
@@ -855,8 +857,9 @@ guess will be made."
 	    (forward-line)
 	    (skip-chars-forward " \t")
 	    (let ((result (org-babel-read-result)))
-	      (message (format "Cached: %s"
-                               (replace-regexp-in-string "%" "%%" (format "%S" result))))
+              (unless noninteractive
+	        (message (format "Cached: %s"
+                                 (replace-regexp-in-string "%" "%%" (format "%S" result)))))
 	      result)))
 	 ((org-babel-confirm-evaluate info)
 	  (let* ((lang (nth 0 info))
@@ -879,21 +882,26 @@ guess will be made."
 		 result exec-start-time)
 	    (unless (fboundp cmd)
 	      (error "No org-babel-execute function for %s!" lang))
-	    (message "Executing %s %s %s..."
-		     (capitalize lang)
-                     (pcase executor-type
-                       ('src-block "code block")
-                       ('inline-src-block "inline code block")
-                       ('babel-call "call")
-                       ('inline-babel-call "inline call")
-                       (e (symbol-name e)))
-		     (let ((name (nth 4 info)))
-		       (if name
-                           (format "(%s)" name)
-                         (format "at position %S" (nth 5 info)))))
+            (unless noninteractive
+	      (message "Executing %s %s %s..."
+		       (capitalize lang)
+                       (pcase executor-type
+                         ('src-block "code block")
+                         ('inline-src-block "inline code block")
+                         ('babel-call "call")
+                         ('inline-babel-call "inline call")
+                         (e (symbol-name e)))
+		       (let ((name (nth 4 info)))
+		         (if name
+                             (format "(%s)" name)
+                           (format "at position %S" (nth 5 info))))))
 	    (setq exec-start-time (current-time)
                   result
-		  (let ((r (save-current-buffer (funcall cmd body params))))
+		  (let ((r
+                         ;; Code block may move point in the buffer.
+                         ;; Make sure that the point remains on the
+                         ;; code block.
+                         (save-excursion (funcall cmd body params))))
 		    (if (and (eq (cdr (assq :result-type params)) 'value)
 			     (or (member "vector" result-params)
 				 (member "table" result-params))
@@ -909,7 +917,7 @@ guess will be made."
 		;; insert a link to `:file'.
 		(when (and result
 			   (not (or (member "link" result-params)
-				  (member "graphics" result-params))))
+				    (member "graphics" result-params))))
 		  (with-temp-file file
 		    (insert (org-babel-format-result
 			     result
@@ -1772,7 +1780,7 @@ shown below.
 
 #+PROPERTY: var foo=1, bar=2
 
-HEADER-ARGUMENTS is alist of all the arguments."
+HEADER-ARGUMENTS is an alist of all the arguments."
   (let (results)
     (mapc (lambda (pair)
 	    (if (eq (car pair) :var)
@@ -2447,8 +2455,8 @@ the inline source block.  The macro is stripped upon export.
 Multiline and non-scalar RESULTS from inline source blocks are
 not allowed.  When EXEC-TIME is provided it may be included in a
 generated message.  With optional argument RESULT-PARAMS controls
-insertion of results in the Org mode file.  RESULT-PARAMS can
-take the following values:
+insertion of results in the Org mode file.  RESULT-PARAMS is a list
+that can contain the following values:
 
 replace - (default option) insert results after the source block
           or inline source block replacing any previously
@@ -2507,15 +2515,17 @@ list ---- the results are rendered as a list.  This option not
 table --- the results are rendered as a table.  This option not
           allowed for inline source blocks.
 
-INFO may provide the values of these header arguments (in the
-`header-arguments-alist' see the docstring for
-`org-babel-get-src-block-info'):
+INFO is the src block info, as returned by
+`org-babel-get-src-block-info' (which see).  Some values from its
+PARAMETERS part (header argument alist) can affect the inserted
+result:
 
-:file --- the name of the file to which output should be written.
+:file-desc - when RESULT-PARAMS contains \"file\", use it as
+             description of the inserted link.
 
-:wrap --- the effect is similar to `latex' in RESULT-PARAMS but
-          using the argument supplied to specify the export block
-          or snippet type."
+:wrap        the effect is similar to `latex' in RESULT-PARAMS but
+             using the argument supplied to specify the export block
+             or snippet type."
   (cond ((stringp result)
 	 (setq result (substring-no-properties result))
 	 (when (member "file" result-params)
@@ -2758,18 +2768,19 @@ INFO may provide the values of these header arguments (in the
 			   (not (and (listp result)
 				     (member "append" result-params))))
 		  (indent-rigidly beg end indent))
-                (let ((time-info
-                       ;; Only show the time when something other than
-                       ;; 0s will be shown, i.e. check if the time is at
-                       ;; least half of the displayed precision.
-                       (if (and exec-time (> (float-time exec-time) 0.05))
-                           (format " (took %.1fs)" (float-time exec-time))
-                         "")))
-                  (if (null result)
-                      (if (member "value" result-params)
-                          (message "Code block returned no value%s." time-info)
-                        (message "Code block produced no output%s." time-info))
-                    (message "Code block evaluation complete%s." time-info))))
+                (unless noninteractive
+                  (let ((time-info
+                         ;; Only show the time when something other than
+                         ;; 0s will be shown, i.e. check if the time is at
+                         ;; least half of the displayed precision.
+                         (if (and exec-time (> (float-time exec-time) 0.05))
+                             (format " (took %.1fs)" (float-time exec-time))
+                           "")))
+                    (if (null result)
+                        (if (member "value" result-params)
+                            (message "Code block returned no value%s." time-info)
+                          (message "Code block produced no output%s." time-info))
+                      (message "Code block evaluation complete%s." time-info)))))
 	    (when end (set-marker end nil))
 	    (when outside-scope (narrow-to-region visible-beg visible-end))
 	    (set-marker visible-beg nil)
@@ -2854,7 +2865,7 @@ file's directory then expand relative links.
 
 If the optional TYPE is passed as `attachment' and the path is a
 descendant of the DEFAULT-DIRECTORY, the generated link will be
-specified as an an \"attachment:\" style link."
+specified as an \"attachment:\" style link."
   (when (stringp result)
     (let* ((result-file-name (expand-file-name result))
            (base-file-name (buffer-file-name (buffer-base-buffer)))
@@ -2952,9 +2963,9 @@ used as a string to be appended to #+begin_example line."
       (goto-char body-start)
       (insert body))))
 
-(defun org-babel-merge-params (&rest plists)
-  "Combine all parameter association lists in PLISTS.
-Later elements of PLISTS override the values of previous elements.
+(defun org-babel-merge-params (&rest alists)
+  "Combine all parameter association lists in ALISTS.
+Later elements of ALISTS override the values of previous elements.
 This takes into account some special considerations for certain
 parameters when merging lists."
   (let* ((results-exclusive-groups
@@ -2983,8 +2994,8 @@ parameters when merging lists."
 	 ;; Some keywords accept multiple values.  We need to treat
 	 ;; them specially.
 	 vars results exports)
-    (dolist (plist plists)
-      (dolist (pair plist)
+    (dolist (alist alists)
+      (dolist (pair alist)
 	(pcase pair
 	  (`(:var . ,value)
 	   (let ((name (cond
@@ -3136,47 +3147,47 @@ block but are passed literally to the \"example-block\"."
                   (with-current-buffer parent-buffer
                     (buffer-chars-modified-tick)))))
     (cl-macrolet ((c-wrap
-	           (s)
-	           ;; Comment string S, according to LANG mode.  Return new
-	           ;; string.
-	           `(unless org-babel-tangle-uncomment-comments
-	              (with-temp-buffer
-		        (funcall (org-src-get-lang-mode lang))
-		        (comment-region (point)
-				        (progn (insert ,s) (point)))
-		        (org-trim (buffer-string)))))
+	            (s)
+	            ;; Comment string S, according to LANG mode.  Return new
+	            ;; string.
+	            `(unless org-babel-tangle-uncomment-comments
+	               (with-temp-buffer
+		         (funcall (org-src-get-lang-mode lang))
+		         (comment-region (point)
+				         (progn (insert ,s) (point)))
+		         (org-trim (buffer-string)))))
 	          (expand-body
-	           (i)
-	           ;; Expand body of code represented by block info I.
-	           `(let ((b (if (org-babel-noweb-p (nth 2 ,i) :eval)
-			         (org-babel-expand-noweb-references ,i)
-		               (nth 1 ,i))))
-	              (if (not comment) b
-		        (let ((cs (org-babel-tangle-comment-links ,i)))
-		          (concat (c-wrap (car cs)) "\n"
-			          b "\n"
-			          (c-wrap (cadr cs)))))))
+	            (i)
+	            ;; Expand body of code represented by block info I.
+	            `(let ((b (if (org-babel-noweb-p (nth 2 ,i) :eval)
+			          (org-babel-expand-noweb-references ,i)
+		                (nth 1 ,i))))
+	               (if (not comment) b
+		         (let ((cs (org-babel-tangle-comment-links ,i)))
+		           (concat (c-wrap (car cs)) "\n"
+			           b "\n"
+			           (c-wrap (cadr cs)) "\n")))))
 	          (expand-references
-	           (ref)
-	           `(pcase (gethash ,ref org-babel-expand-noweb-references--cache)
-	              (`(,last . ,previous)
-	               ;; Ignore separator for last block.
-	               (let ((strings (list (expand-body last))))
-		         (dolist (i previous)
-		           (let ((parameters (nth 2 i)))
-		             ;; Since we're operating in reverse order, first
-		             ;; push separator, then body.
-		             (push (or (cdr (assq :noweb-sep parameters)) "\n")
-			           strings)
-		             (push (expand-body i) strings)))
-		         (mapconcat #'identity strings "")))
-	              ;; Raise an error about missing reference, or return the
-	              ;; empty string.
-	              ((guard (or org-babel-noweb-error-all-langs
-			          (member lang org-babel-noweb-error-langs)))
-	               (error "Cannot resolve %s (see `org-babel-noweb-error-langs')"
-		              (org-babel-noweb-wrap ,ref)))
-	              (_ ""))))
+	            (ref)
+	            `(pcase (gethash ,ref org-babel-expand-noweb-references--cache)
+	               (`(,last . ,previous)
+	                ;; Ignore separator for last block.
+	                (let ((strings (list (expand-body last))))
+		          (dolist (i previous)
+		            (let ((parameters (nth 2 i)))
+		              ;; Since we're operating in reverse order, first
+		              ;; push separator, then body.
+		              (push (or (cdr (assq :noweb-sep parameters)) "\n")
+			            strings)
+		              (push (expand-body i) strings)))
+		          (mapconcat #'identity strings "")))
+	               ;; Raise an error about missing reference, or return the
+	               ;; empty string.
+	               ((guard (or org-babel-noweb-error-all-langs
+			           (member lang org-babel-noweb-error-langs)))
+	                (error "Cannot resolve %s (see `org-babel-noweb-error-langs')"
+		               (org-babel-noweb-wrap ,ref)))
+	               (_ ""))))
       (replace-regexp-in-string
        noweb-re
        (lambda (m)
@@ -3360,10 +3371,22 @@ situations in which is it not appropriate."
 		  (string= cell "*this*")))
          ;; FIXME: Arbitrary code evaluation.
 	 (eval (read cell) t))
-	((save-match-data
-           (and (string-match "^[[:space:]]*\"\\(.*\\)\"[[:space:]]*$" cell)
-                (not (string-match "[^\\]\"" (match-string 1 cell)))))
-         (read cell))
+	((let (read-val)
+           (and (string-match-p
+                 (rx bos (0+ (any space ?\n))
+                     ?\" (0+ anychar) ?\"
+                     (0+ (any space ?\n)) eos)
+                 cell)
+                ;; CELL is a single string
+                (with-temp-buffer
+                  (insert cell)
+                  (goto-char 1)
+                  (when (setq read-val
+                              (ignore-errors
+                                (read (current-buffer))))
+                    (skip-chars-forward "[:space:]")
+                    (eobp)))
+                read-val)))
 	(t (org-no-properties cell))))
 
 (defun org-babel--string-to-number (string)
@@ -3389,7 +3412,9 @@ SEPARATOR is passed to `org-table-convert-region', which see."
 		   ;; If the file was empty, don't bother trying to
 		   ;; convert the table.
 		   (when (> pmax 1)
-		     (org-table-convert-region (point-min) pmax separator)
+		     (org-table-convert-region
+                      (point-min) pmax
+                      (or separator 'babel-auto))
 		     (delq nil
 			   (mapcar (lambda (row)
 				     (and (not (eq row 'hline))

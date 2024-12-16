@@ -3,7 +3,7 @@
 ;; Copyright (C) 2010-2024 Free Software Foundation, Inc.
 
 ;; Author: Jambunathan K <kjambunathan at gmail dot com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 
 ;; This file is part of GNU Emacs.
@@ -1373,7 +1373,7 @@ original parsed data.  INFO is a plist holding export options."
       (with-temp-buffer
         (when (file-exists-p styles-xml)
           (insert-file-contents styles-xml))
-        
+
         ;; Write custom styles for source blocks
         ;; Save STYLES used for colorizing of source blocks.
         ;; Update styles.xml with styles that were collected as part of
@@ -1400,7 +1400,7 @@ original parsed data.  INFO is a plist holding export options."
 		          (level (string-to-number (match-string 2))))
 		      (if (wholenump sec-num) (<= level sec-num) sec-num))
 	      (replace-match replacement t nil))))
-        
+
         ;; Write back the new contents.
         (write-region nil nil styles-xml))))
   ;; Update content.xml.
@@ -1945,7 +1945,16 @@ contextual information."
     (format "\n<text:list-item%s>\n%s\n%s"
 	    (if count (format " text:start-value=\"%s\"" count) "")
 	    contents
-	    (if (org-element-map item 'table #'identity info 'first-match)
+	    (if (org-element-map item
+                    'table #'identity info 'first-match
+                    ;; Ignore tables inside sub-lists.
+                    '(plain-list))
+                ;; `org-odt-table' will splice forced list ending (all
+                ;; the way up to the topmost list parent), table, and
+                ;; forced list re-opening in the middle of the item,
+                ;; marking text after table with <text:list-header>
+                ;; So, we must match close </text:list-header> instead
+                ;; of the original </text:list-item>.
 		"</text:list-header>"
 	      "</text:list-item>"))))
 
@@ -2244,11 +2253,11 @@ SHORT-CAPTION are strings."
 LINK is the link pointing to the inline image.  INFO is a plist
 used as a communication channel."
   (cl-assert (org-element-type-p element 'link))
-  (let* ((src (let* ((type (org-element-property :type element))
-		     (raw-path (org-element-property :path element)))
+  (cl-assert (equal "file" (org-element-property :type element)))
+  (let* ((src (let ((raw-path (org-element-property :path element)))
 		(cond ((file-name-absolute-p raw-path)
 		       (expand-file-name raw-path))
-		      (t (concat type ":" raw-path)))))
+		      (t raw-path))))
 	 (src-expanded (if (file-name-absolute-p src) src
 			 (expand-file-name src (file-name-directory
 						(plist-get info :input-file)))))
@@ -2673,8 +2682,6 @@ INFO is a plist holding contextual information.  See
 	 (imagep (org-export-inline-image-p
 		  link (plist-get info :odt-inline-image-rules)))
 	 (path (cond
-		((member type '("http" "https" "ftp" "mailto"))
-		 (concat type ":" raw-path))
 		((string= type "file")
                  (let ((path-uri (org-export-file-uri raw-path)))
                    (if (string-prefix-p "file://" path-uri)
@@ -2684,9 +2691,10 @@ INFO is a plist holding contextual information.  See
                      ;; archive.  The directory containing the odt file
                      ;; is "../".
                      (concat "../" path-uri))))
-		(t raw-path)))
+		(t (concat type ":" raw-path))))
 	 ;; Convert & to &amp; for correct XML representation
-	 (path (replace-regexp-in-string "&" "&amp;" path)))
+	 (path (replace-regexp-in-string "&" "&amp;" path))
+         (raw-path (replace-regexp-in-string "&" "&amp;" raw-path)))
     (cond
      ;; Link type is handled by a special function.
      ((org-export-custom-protocol-maybe link desc 'odt info))
@@ -2765,10 +2773,10 @@ INFO is a plist holding contextual information.  See
      ;; Coderef: replace link with the reference name or the
      ;; equivalent line number.
      ((string= type "coderef")
-      (let* ((line-no (format "%d" (org-export-resolve-coderef path info)))
-	     (href (concat "coderef-" path)))
+      (let* ((line-no (format "%d" (org-export-resolve-coderef raw-path info)))
+	     (href (concat "coderef-" raw-path)))
 	(format
-	 (org-export-get-coderef-format path desc)
+	 (org-export-get-coderef-format raw-path desc)
 	 (format
 	  "<text:bookmark-ref text:reference-format=\"number\" text:ref-name=\"OrgXref.%s\">%s</text:bookmark-ref>"
 	  href line-no))))
@@ -3472,6 +3480,16 @@ pertaining to indentation here."
 	 (--walk-list-genealogy-and-collect-tags
 	  (lambda (table info)
 	    (let* ((genealogy (org-element-lineage table))
+                   ;; FIXME: This will fail when the table is buried
+                   ;; inside non-list parent greater element, like
+                   ;; special block.  The parent block will not be
+                   ;; closed properly.
+                   ;; Example:
+                   ;; 1. List item
+                   ;;    - Sub-item
+                   ;;      #+begin_textbox
+                   ;;      | Table |
+                   ;;      #+end_textbox
 		   (list-genealogy
 		    (when (org-element-type-p (car genealogy) 'item)
 		      (cl-loop for el in genealogy
@@ -3728,6 +3746,7 @@ contextual information."
 		     (if (eq processing-type 'dvipng) "dvipng" "convert") "" t))
 	 (setq warning "`org-odt-with-latex': LaTeX to PNG converter not available.  Falling back to verbatim.")
 	 (setq processing-type 'verbatim)))
+      (verbatim) ;; nothing to do
       (otherwise
        (setq warning "`org-odt-with-latex': Unknown LaTeX option.  Forcing verbatim.")
        (setq processing-type 'verbatim)))

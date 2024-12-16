@@ -4,7 +4,7 @@
 
 ;; Author: Nicolas Goaziou <mail@nicolasgoaziou.fr>
 ;; Maintainer: Ihor Radchenko <yantar92 at posteo dot net>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 
 ;; This file is part of GNU Emacs.
 
@@ -81,6 +81,7 @@
 (require 'ol)
 (require 'org-element)
 (require 'org-macro)
+(require 'org-attach) ; org-attach adds staff to `org-export-before-parsing-functions'
 (require 'tabulated-list)
 
 (declare-function org-src-coderef-format "org-src" (&optional element))
@@ -155,8 +156,11 @@
     (:cite-export "CITE_EXPORT" nil org-cite-export-processors))
   "Alist between export properties and ways to set them.
 
-The key of the alist is the property name, and the value is a list
-like (KEYWORD OPTION DEFAULT BEHAVIOR) where:
+Each element of the alist is a list like
+(ALIST-KEY KEYWORD OPTION DEFAULT BEHAVIOR)
+
+ALIST-KEY is the key of the alist - a symbol like `:option', and the
+value is (KEYWORD OPTION ...).
 
 KEYWORD is a string representing a buffer keyword, or nil.  Each
   property defined this way can also be set, during subtree
@@ -185,7 +189,7 @@ All these properties should be backend agnostic.  Backend
 specific properties are set through `org-export-define-backend'.
 Properties redefined there have precedence over these.")
 
-(defconst org-export-filters-alist
+(defvar org-export-filters-alist
   '((:filter-body . org-export-filter-body-functions)
     (:filter-bold . org-export-filter-bold-functions)
     (:filter-babel-call . org-export-filter-babel-call-functions)
@@ -684,31 +688,14 @@ e.g. \"stat:nil\""
   "Non-nil means interpret \"_\" and \"^\" for export.
 
 If you want to control how Org displays those characters, see
-`org-use-sub-superscripts'.  `org-export-with-sub-superscripts'
-used to be an alias for `org-use-sub-superscripts' in Org <8.0,
-it is not anymore.
+`org-use-sub-superscripts'.
 
 When this option is turned on, you can use TeX-like syntax for
 sub- and superscripts and see them exported correctly.
 
 You can also set the option with #+OPTIONS: ^:t
 
-Several characters after \"_\" or \"^\" will be considered as a
-single item - so grouping with {} is normally not needed.  For
-example, the following things will be parsed as single sub- or
-superscripts:
-
- 10^24   or   10^tau     several digits will be considered 1 item.
- 10^-12  or   10^-tau    a leading sign with digits or a word
- x^2-y^3                 will be read as x^2 - y^3, because items are
-			 terminated by almost any nonword/nondigit char.
- x_{i^2} or   x^(2-i)    braces or parenthesis do grouping.
-
-Still, ambiguity is possible.  So when in doubt, use {} to enclose
-the sub/superscript.  If you set this variable to the symbol `{}',
-the braces are *required* in order to trigger interpretations as
-sub/superscript.  This can be helpful in documents that need \"_\"
-frequently in plain text."
+See `org-use-sub-superscripts' docstring for more details."
   :group 'org-export-general
   :version "24.4"
   :package-version '(Org . "8.0")
@@ -1415,8 +1402,7 @@ external parameters overriding Org default settings, but still
 inferior to file-local settings."
   ;; First install #+BIND variables since these must be set before
   ;; global options are read.
-  (dolist (pair (org-export--list-bound-variables))
-    (set (make-local-variable (car pair)) (nth 1 pair)))
+  (org-export--set-variables (org-export--list-bound-variables))
   ;; Get and prioritize export options...
   (org-combine-plists
    ;; ... from global variables...
@@ -1897,6 +1883,38 @@ INFO is a plist containing export directives."
       (let ((transcoder (cdr (assq type (plist-get info :translate-alist)))))
 	(and (functionp transcoder) transcoder)))))
 
+(defun org-export--keep-spaces (data info)
+  "Non-nil, when post-blank spaces after removing DATA should be preserved.
+INFO is the info channel.
+
+This function returns nil, when previous exported element already has
+trailing spaces or when DATA does not have non-zero non-nil
+`:post-blank' property.
+
+When the return value is non-nil, it is a string containing the trailing
+spaces."
+  ;; When DATA is an object, interpret this as if DATA should be
+  ;; ignored (see `org-export--prune-tree').  Keep spaces in place of
+  ;; removed element, if necessary.  Example: "Foo.[10%] Bar" would
+  ;; become "Foo.Bar" if we do not keep spaces.  Another example: "A
+  ;; space@@ascii:*@@ character."  should become "A space character"
+  ;; in non-ASCII export.
+  (let ((post-blank (org-element-post-blank data)))
+    (unless (or (not post-blank)
+                (zerop post-blank)
+                (eq 'element (org-element-class data)))
+      (let ((previous (org-export-get-previous-element data info)))
+	(unless (or (not previous)
+		    (pcase (org-element-type previous)
+		      (`plain-text
+		       (string-match-p
+			(rx (any " \t\r\n") eos) previous))
+		      (_ (org-element-post-blank previous))))
+          ;; When previous element does not have
+          ;; trailing spaces, keep the trailing
+          ;; spaces from DATA.
+	  (make-string post-blank ?\s))))))
+
 ;;;###autoload
 (defun org-export-data (data info)
   "Convert DATA into current backend format.
@@ -1917,7 +1935,7 @@ Return a string."
 		 (progn ,@body)
 	       (org-link-broken
 		(pcase (plist-get info :with-broken-links)
-		  (`nil (user-error "Unable to resolve link: %S" (nth 1 err)))
+		  (`nil (user-error "Org export aborted.  Unable to resolve link: %S\nSee `org-export-with-broken-links'" (nth 1 err)))
 		  (`mark (org-export-data
 			  (format "[BROKEN LINK: %s]" (nth 1 err)) info))
 		  (_ nil))))))
@@ -1947,15 +1965,11 @@ Return a string."
 			   (eq (plist-get info :with-archived-trees) 'headline)
 			   (org-element-property :archivedp data)))
 		  (let ((transcoder (org-export-transcoder data info)))
-		    (or (and (functionp transcoder)
-                             (if (eq type 'link)
-			         (broken-link-handler
-			          (funcall transcoder data nil info))
-                               (funcall transcoder data nil info)))
-			;; Export snippets never return a nil value so
-			;; that white spaces following them are never
-			;; ignored.
-			(and (eq type 'export-snippet) ""))))
+		    (and (functionp transcoder)
+                         (if (eq type 'link)
+			     (broken-link-handler
+			      (funcall transcoder data nil info))
+                           (funcall transcoder data nil info)))))
 		 ;; Element/Object with contents.
 		 (t
 		  (let ((transcoder (org-export-transcoder data info)))
@@ -1996,8 +2010,8 @@ Return a string."
 	  (puthash
 	   data
 	   (cond
-	    ((not results) "")
-	    ((memq type '(nil org-data plain-text raw)) results)
+	    ((not results) (or (org-export--keep-spaces data info) ""))
+            ((memq type '(nil org-data plain-text raw)) results)
 	    ;; Append the same white space between elements or objects
 	    ;; as in the original buffer, and call appropriate filters.
 	    (t
@@ -2574,7 +2588,7 @@ Return the updated communication channel."
 (defun org-export--set-variables (variable-alist)
   "Set buffer-local variables according to VARIABLE-ALIST in current buffer."
   (pcase-dolist (`(,var . ,val) variable-alist)
-    (set (make-local-variable var) val)))
+    (set (make-local-variable var) (car val))))
 
 (cl-defun org-export-copy-buffer (&key to-buffer drop-visibility
                                        drop-narrowing drop-contents
@@ -2658,24 +2672,13 @@ from tree."
 		(let ((type (org-element-type data)))
 		  (if (org-export--skip-p data info selected excluded)
 		      (if (memq type '(table-cell table-row)) (push data ignore)
-			(let ((post-blank (org-element-post-blank data)))
-			  (if (or (not post-blank) (zerop post-blank)
-				  (eq 'element (org-element-class data)))
-			      (org-element-extract data)
+                        (if-let ((keep-spaces (org-export--keep-spaces data info)))
 			    ;; Keep spaces in place of removed
 			    ;; element, if necessary.
 			    ;; Example: "Foo.[10%] Bar" would become
 			    ;; "Foo.Bar" if we do not keep spaces.
-			    (let ((previous (org-export-get-previous-element data info)))
-			      (if (or (not previous)
-				      (pcase (org-element-type previous)
-					(`plain-text
-					 (string-match-p
-					  (rx  whitespace eos) previous))
-					(_ (org-element-post-blank previous))))
-				  ;; Previous object ends with whitespace already.
-				  (org-element-extract data)
-				(org-element-set data (make-string post-blank ?\s)))))))
+                            (org-element-set data keep-spaces)
+			  (org-element-extract data)))
 		    (if (and (eq type 'headline)
 			     (eq (plist-get info :with-archived-trees)
 				 'headline)
@@ -4739,7 +4742,7 @@ matching DATUM before creating a new reference."
 	       ;; unique, e.g., there might be duplicate custom ID or
 	       ;; two headings with the same title in the file.
 	       ;;
-	       ;; As a consequence, before re-using any reference to
+	       ;; As a consequence, before reusing any reference to
 	       ;; an element or object, we check that it doesn't refer
 	       ;; to a previous element or object.
 	       (new (or (cl-some
@@ -5086,8 +5089,7 @@ A table has a header when it contains at least two row groups."
 		 cache)))))
 
 (defun org-export-table-row-is-special-p (table-row _)
-  "Non-nil if TABLE-ROW is considered special.
-All special rows will be ignored during export."
+  "Non-nil if TABLE-ROW is considered special."
   (when (eq (org-element-property :type table-row) 'standard)
     (let ((first-cell (org-element-contents
 		       (car (org-element-contents table-row)))))
@@ -5417,10 +5419,11 @@ INFO is a plist used as a communication channel."
        (org-export-table-row-ends-rowgroup-p table-row info)))
 
 (defun org-export-table-row-number (table-row info)
-  "Return TABLE-ROW number.
+  "Return TABLE-ROW number in the exported table.
 INFO is a plist used as a communication channel.  Return value is
 zero-indexed and ignores separators.  The function returns nil
-for special rows and separators."
+when TABLE-ROW is a separator or when it is listed in :ignore-list
+property of the INFO plist."
   (when (eq (org-element-property :type table-row) 'standard)
     (let* ((cache (or (plist-get info :table-row-number-cache)
 		      (let ((table (make-hash-table :test #'eq)))
@@ -5942,6 +5945,56 @@ INFO is the current export state, as a plist."
 	      (when current-status
 		(push (cons text (nreverse current-status)) full-status))))
 	  info nil org-element-recursive-objects)
+        ;; When quotes are not balanced, treat them as apostrophes.
+        (setq full-status (nreverse full-status))
+        (let (primary-openings secondary-openings)
+          (dolist (substatus full-status)
+            (let ((status (cdr substatus)))
+              (while status
+                (pcase (car status)
+                  (`apostrophe nil)
+                  (`primary-opening
+                   (push status primary-openings))
+                  (`secondary-opening
+                   (push status secondary-openings))
+                  (`secondary-closing
+                   (if secondary-openings
+                       ;; Remove matched opening.
+                       (pop secondary-openings)
+                     ;; No matching openings for a given closing.  Replace
+                     ;; it with apostrophe.
+                     (setcar status 'apostrophe)))
+                  (`primary-closing
+                   (when secondary-openings
+                     ;; Some secondary opening quotes are not closed
+                     ;; within "...".  Replace them all with apostrophes.
+                     (dolist (opening secondary-openings)
+                       (setcar opening 'apostrophe))
+                     (setq secondary-openings nil))
+                   (if primary-openings
+                       ;; Remove matched opening.
+                       (pop primary-openings)
+                     ;; No matching openings for a given closing.
+                     (error "This should no happen"))))
+                (setq status (cdr status)))))
+          (when primary-openings
+            ;; Trailing unclosed "
+            (unless (= 1 (length primary-openings))
+              (error "This should not happen"))
+            ;; Mark for not replacing.
+            (setcar (car primary-openings) nil)
+            ;; Mark all the secondary openings and closings after
+            ;; trailing unclosed " as apostrophes.
+            (let ((after-unbalanced-primary nil))
+              (dolist (substatus full-status)
+                (let ((status (cdr substatus)))
+                  (while status
+                    (when (eq status (car primary-openings))
+                      (setq after-unbalanced-primary t))
+                    (when after-unbalanced-primary
+                      (when (memq (car status) '(secondary-opening secondary-closing))
+                        (setcar status 'apostrophe)))
+                    (setq status (cdr status))))))))
 	(puthash (cons parent (org-element-secondary-p s)) full-status cache)
 	(cdr (assq s full-status))))))
 
@@ -6087,6 +6140,7 @@ them."
      ("cs" :default "Pokračování z předchozí strany")
      ("de" :default "Fortsetzung von vorheriger Seite")
      ("es" :html "Contin&uacute;a de la p&aacute;gina anterior" :ascii "Continua de la pagina anterior" :default "Continúa de la página anterior")
+     ("et" :default "Jätk eelmisele leheküljele" :html "J&#228;tk eelmisele lehek&#252;ljele" :utf-8 "Jätk eelmisele leheküljele")
      ("fa" :default "ادامه از صفحهٔ قبل")
      ("fr" :default "Suite de la page précédente")
      ("it" :default "Continua da pagina precedente")
@@ -6107,6 +6161,7 @@ them."
      ("cs" :default "Pokračuje na další stránce")
      ("de" :default "Fortsetzung nächste Seite")
      ("es" :html "Contin&uacute;a en la siguiente p&aacute;gina" :ascii "Continua en la siguiente pagina" :default "Continúa en la siguiente página")
+     ("et" :default "Jätkub järgmisel leheküljel" :html "J&#228;tkub j&#228;rgmisel lehek&#252;ljel" :utf-8 "Jätkub järgmisel leheküljel")
      ("fa" :default "ادامه در صفحهٔ بعد")
      ("fr" :default "Suite page suivante")
      ("it" :default "Continua alla pagina successiva")
@@ -6124,6 +6179,7 @@ them."
      ("tr" :default "Devamı sonraki sayfada"))
     ("Created"
      ("cs" :default "Vytvořeno")
+     ("et" :default "Loodud")
      ("fa" :default "ساخته شده")
      ("nl" :default "Gemaakt op")  ;; must be followed by a date or date+time
      ("nn" :default "Oppretta")
@@ -6141,7 +6197,7 @@ them."
      ("de" :default "Datum")
      ("eo" :default "Dato")
      ("es" :default "Fecha")
-     ("et" :html "Kuup&#228;ev" :utf-8 "Kuupäev")
+     ("et" :default "Kuupäev" :html "Kuup&#228;ev" :utf-8 "Kuupäev")
      ("fa" :default "تاریخ")
      ("fi" :html "P&auml;iv&auml;m&auml;&auml;r&auml;")
      ("hu" :html "D&aacute;tum")
@@ -6168,7 +6224,7 @@ them."
      ("da" :default "Ligning")
      ("de" :default "Gleichung")
      ("es" :ascii "Ecuacion" :html "Ecuaci&oacute;n" :default "Ecuación")
-     ("et" :html "V&#245;rrand" :utf-8 "Võrrand")
+     ("et" :default "Võrrand" :html "V&#245;rrand" :utf-8 "Võrrand")
      ("fa" :default "معادله")
      ("fr" :ascii "Equation" :default "Équation")
      ("is" :default "Jafna")
@@ -6201,7 +6257,7 @@ them."
      ("no" :default "Illustrasjon")
      ("nb" :default "Illustrasjon")
      ("nn" :default "Illustrasjon")
-     ("pl" :default "Obrazek") ; alternativly "Rysunek"
+     ("pl" :default "Obrazek") ; alternatively "Rysunek"
      ("pt_BR" :default "Figura")
      ("ro" :default "Imaginea")
      ("ru" :html "&#1056;&#1080;&#1089;&#1091;&#1085;&#1086;&#1082;" :utf-8 "Рисунок")
@@ -6224,7 +6280,7 @@ them."
      ("no" :default "Illustrasjon %d")
      ("nb" :default "Illustrasjon %d")
      ("nn" :default "Illustrasjon %d")
-     ("pl" :default "Obrazek %d") ; alternativly "Rysunek %d"
+     ("pl" :default "Obrazek %d") ; alternatively "Rysunek %d"
      ("pt_BR" :default "Figura %d:")
      ("ro" :default "Imaginea %d:")
      ("ru" :html "&#1056;&#1080;&#1089;. %d.:" :utf-8 "Рис. %d.:")
@@ -6240,7 +6296,7 @@ them."
      ("de" :html "Fu&szlig;noten" :default "Fußnoten")
      ("eo" :default "Piednotoj")
      ("es" :ascii "Notas al pie de pagina" :html "Notas al pie de p&aacute;gina" :default "Notas al pie de página")
-     ("et" :html "Allm&#228;rkused" :utf-8 "Allmärkused")
+     ("et" :default "Allmärkused" :html "Allm&#228;rkused" :utf-8 "Allmärkused")
      ("fa" :default "پانوشت‌ها")
      ("fi" :default "Alaviitteet")
      ("fr" :default "Notes de bas de page")
@@ -6363,6 +6419,7 @@ them."
      ("cs" :default "Reference")
      ("de" :default "Quellen")
      ("es" :default "Referencias")
+     ("et" :default "Viited")
      ("fa" :default "منابع")
      ("fr" :ascii "References" :default "Références")
      ("it" :default "Riferimenti")
@@ -6376,6 +6433,7 @@ them."
      ("tr" :default "Referanslar"))
     ("See figure %s"
      ("cs" :default "Viz obrázek %s")
+     ("et" :default "Vaata joonist %s")
      ("fa" :default "نمایش شکل %s")
      ("fr" :default "cf. figure %s"
       :html "cf.&nbsp;figure&nbsp;%s" :latex "cf.~figure~%s")
@@ -6383,7 +6441,7 @@ them."
      ("nl" :default "Zie figuur %s"
       :html "Zie figuur&nbsp;%s" :latex "Zie figuur~%s")
      ("nn" :default "Sjå figur %s")
-     ("pl" :default "Patrz obrazek %s") ; alternativly "Patrz rysunek %s"
+     ("pl" :default "Patrz obrazek %s") ; alternatively "Patrz rysunek %s"
      ("pt_BR" :default "Veja a figura %s")
      ("ro" :default "Vezi figura %s")
      ("sl" :default "Glej sliko %s")
@@ -6391,6 +6449,7 @@ them."
      ("tr" :default "bkz. şekil %s"))
     ("See listing %s"
      ("cs" :default "Viz program %s")
+     ("et" :default "Vaata loendit %s")
      ("fa" :default "نمایش برنامه‌ریزی %s")
      ("fr" :default "cf. programme %s"
       :html "cf.&nbsp;programme&nbsp;%s" :latex "cf.~programme~%s")
@@ -6409,7 +6468,7 @@ them."
      ("da" :default "jævnfør afsnit %s")
      ("de" :default "siehe Abschnitt %s")
      ("es" :ascii "Vea seccion %s" :html "Vea secci&oacute;n %s" :default "Vea sección %s")
-     ("et" :html "Vaata peat&#252;kki %s" :utf-8 "Vaata peatükki %s")
+     ("et" :default "Vaata peatükki %s" :html "Vaata peat&#252;kki %s" :utf-8 "Vaata peatükki %s")
      ("fa" :default "نمایش بخش %s")
      ("fr" :default "cf. section %s")
      ("it" :default "Vedi sezione %s")
@@ -6429,6 +6488,7 @@ them."
      ("zh-CN" :html "&#21442;&#35265;&#31532;%s&#33410;" :utf-8 "参见第%s节"))
     ("See table %s"
      ("cs" :default "Viz tabulka %s")
+     ("et" :default "Vaata tabelit %s")
      ("fa" :default "نمایش جدول %s")
      ("fr" :default "cf. tableau %s"
       :html "cf.&nbsp;tableau&nbsp;%s" :latex "cf.~tableau~%s")
@@ -6615,7 +6675,7 @@ and `org-export-to-file' for more specialized functions."
   (with-temp-message "Initializing asynchronous export process"
     (let ((copy-fun (org-element--generate-copy-script (current-buffer)))
           (temp-file (make-temp-file "org-export-process")))
-      (let ((coding-system-for-write 'utf-8-emacs-unix))
+      (let ((coding-system-for-write 'emacs-internal))
         (write-region
          ;; Null characters (from variable values) are inserted
          ;; within the file.  As a consequence, coding system for
@@ -6712,7 +6772,7 @@ use it to set a major mode there, e.g.,
     (interactive)
     (org-export-to-buffer \\='latex \"*Org LATEX Export*\"
       async subtreep visible-only body-only ext-plist
-      #\\='LaTeX-mode))
+      (major-mode-remap \\='latex-mode)))
 
 When expressed as an anonymous function, using `lambda',
 POST-PROCESS needs to be quoted.
@@ -7078,6 +7138,8 @@ asynchronous export stack."
 				      (and org-export-in-background 'async))
 			        nil
 			        org-export-dispatch-use-expert-ui)))
+                     (and (get-buffer-window "*Org Export Dispatcher*" t)
+                          (quit-window 'kill (get-buffer-window "*Org Export Dispatcher*" t)))
 		     (and (get-buffer "*Org Export Dispatcher*")
 			  (kill-buffer "*Org Export Dispatcher*"))))))
 	 (action (car input))
@@ -7272,9 +7334,7 @@ back to standard interface."
       (save-window-excursion
         ;; At first call, create frame layout in order to display menu.
         (unless (get-buffer "*Org Export Dispatcher*")
-	  (delete-other-windows)
-	  (switch-to-buffer-other-window
-	   (get-buffer-create "*Org Export Dispatcher*"))
+          (pop-to-buffer "*Org Export Dispatcher*" '(org-display-buffer-split))
           (setq cursor-type nil)
           (setq header-line-format
                 (let ((propertize-help-key

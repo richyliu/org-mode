@@ -90,6 +90,21 @@
 (declare-function org-end-of-line "org" (&optional n))
 (declare-function org-entry-put "org" (pom property value))
 (declare-function org-eval-in-calendar "org" (form &optional keepdate))
+(declare-function org-calendar-goto-today-or-insert-dot "org" ())
+(declare-function org-calendar-goto-today "org" ())
+(declare-function org-calendar-backward-month "org" ())
+(declare-function org-calendar-forward-month "org" ())
+(declare-function org-calendar-backward-year "org" ())
+(declare-function org-calendar-forward-year "org" ())
+(declare-function org-calendar-backward-week "org" ())
+(declare-function org-calendar-forward-week "org" ())
+(declare-function org-calendar-backward-day "org" ())
+(declare-function org-calendar-forward-day "org" ())
+(declare-function org-calendar-view-entries "org" ())
+(declare-function org-calendar-scroll-month-left "org" ())
+(declare-function org-calendar-scroll-month-right "org" ())
+(declare-function org-calendar-scroll-three-months-left "org" ())
+(declare-function org-calendar-scroll-three-months-right "org" ())
 (declare-function org-evaluate-time-range "org" (&optional to-buffer))
 (declare-function org-export-dispatch "org" (&optional arg))
 (declare-function org-feed-goto-inbox "org" (feed))
@@ -349,71 +364,25 @@ COMMANDS is a list of alternating OLDDEF NEWDEF command names."
 (defvar org-read-date-minibuffer-local-map
   (let* ((map (make-sparse-keymap)))
     (set-keymap-parent map minibuffer-local-map)
-    (org-defkey map (kbd ".")
-                (lambda () (interactive)
-		  ;; Are we at the beginning of the prompt?
-		  (if (looking-back "^[^:]+: "
-				    (let ((inhibit-field-text-motion t))
-				      (line-beginning-position)))
-		      (org-eval-in-calendar '(calendar-goto-today))
-		    (insert "."))))
-    (org-defkey map (kbd "C-.")
-                (lambda () (interactive)
-		  (org-eval-in-calendar '(calendar-goto-today))))
-    (org-defkey map (kbd "M-S-<left>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-backward-month 1))))
-    (org-defkey map (kbd "ESC S-<left>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-backward-month 1))))
-    (org-defkey map (kbd "M-S-<right>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-forward-month 1))))
-    (org-defkey map (kbd "ESC S-<right>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-forward-month 1))))
-    (org-defkey map (kbd "M-S-<up>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-backward-year 1))))
-    (org-defkey map (kbd "ESC S-<up>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-backward-year 1))))
-    (org-defkey map (kbd "M-S-<down>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-forward-year 1))))
-    (org-defkey map (kbd "ESC S-<down>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-forward-year 1))))
-    (org-defkey map (kbd "S-<up>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-backward-week 1))))
-    (org-defkey map (kbd "S-<down>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-forward-week 1))))
-    (org-defkey map (kbd "S-<left>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-backward-day 1))))
-    (org-defkey map (kbd "S-<right>")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-forward-day 1))))
-    (org-defkey map (kbd "!")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(diary-view-entries))
-                  (message "")))
-    (org-defkey map (kbd ">")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-scroll-left 1))))
-    (org-defkey map (kbd "<")
-                (lambda () (interactive)
-                  (org-eval-in-calendar '(calendar-scroll-right 1))))
-    (org-defkey map (kbd "C-v")
-                (lambda () (interactive)
-                  (org-eval-in-calendar
-                   '(calendar-scroll-left-three-months 1))))
-    (org-defkey map (kbd "M-v")
-                (lambda () (interactive)
-                  (org-eval-in-calendar
-                   '(calendar-scroll-right-three-months 1))))
+    (org-defkey map (kbd ".") #'org-calendar-goto-today-or-insert-dot)
+    (org-defkey map (kbd "C-.") #'org-calendar-goto-today)
+    (org-defkey map (kbd "M-S-<left>") #'org-calendar-backward-month)
+    (org-defkey map (kbd "ESC S-<left>") #'org-calendar-backward-month)
+    (org-defkey map (kbd "M-S-<right>") #'org-calendar-forward-month)
+    (org-defkey map (kbd "ESC S-<right>") #'org-calendar-forward-month)
+    (org-defkey map (kbd "M-S-<up>") #'org-calendar-backward-year)
+    (org-defkey map (kbd "ESC S-<up>") #'org-calendar-backward-year)
+    (org-defkey map (kbd "M-S-<down>") #'org-calendar-forward-year)
+    (org-defkey map (kbd "ESC S-<down>") #'org-calendar-forward-year)
+    (org-defkey map (kbd "S-<up>") #'org-calendar-backward-week)
+    (org-defkey map (kbd "S-<down>") #'org-calendar-forward-week)
+    (org-defkey map (kbd "S-<left>") #'org-calendar-backward-day)
+    (org-defkey map (kbd "S-<right>") #'org-calendar-forward-day)
+    (org-defkey map (kbd "!") #'org-calendar-view-entries)
+    (org-defkey map (kbd ">") #'org-calendar-scroll-month-left)
+    (org-defkey map (kbd "<") #'org-calendar-scroll-month-right)
+    (org-defkey map (kbd "C-v") #'org-calendar-scroll-three-months-left)
+    (org-defkey map (kbd "M-v") #'org-calendar-scroll-three-months-right)
     map)
   "Keymap for minibuffer commands when using `org-read-date'.")
 
@@ -791,8 +760,7 @@ command."
 
 (defun org--print-speed-command (speed-command)
   "Print information about SPEED-COMMAND in help buffer.
-SPEED-COMMAND is an element of `org-speed-commands' or
-`org-speed-commands-user'."
+SPEED-COMMAND is an element of `org-speed-commands'."
   (if (> (length (car speed-command)) 1)
       (progn
 	(princ "\n")
@@ -814,12 +782,7 @@ SPEED-COMMAND is an element of `org-speed-commands' or
     (user-error "Speed commands are not activated, customize `org-use-speed-commands'"))
   (with-output-to-temp-buffer "*Help*"
     (princ "Speed commands\n==============\n")
-    (mapc #'org--print-speed-command
-          ;; FIXME: don't check `org-speed-commands-user' past 9.6
-          (if (boundp 'org-speed-commands-user)
-              (append org-speed-commands
-                      org-speed-commands-user)
-            org-speed-commands)))
+    (mapc #'org--print-speed-command org-speed-commands))
   (with-current-buffer "*Help*"
     (setq truncate-lines t)))
 
@@ -840,12 +803,7 @@ See `org-speed-commands' for configuring them."
   (when (or (and (bolp) (looking-at org-outline-regexp))
 	    (and (functionp org-use-speed-commands)
 		 (funcall org-use-speed-commands)))
-    (cdr (assoc keys
-                ;; FIXME: don't check `org-speed-commands-user' past 9.6
-                (if (boundp 'org-speed-commands-user)
-                    (append org-speed-commands
-                            org-speed-commands-user)
-                  org-speed-commands)))))
+    (cdr (assoc keys org-speed-commands))))
 
 
 ;;; Babel speed keys

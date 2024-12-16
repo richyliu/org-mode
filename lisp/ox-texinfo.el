@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
 ;; Author: Jonathan Leech-Pepin <jonathan.leechpepin at gmail dot com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 
 ;; This file is part of GNU Emacs.
 
@@ -1517,7 +1517,12 @@ information."
   "Transcode a PARAGRAPH element from Org to Texinfo.
 CONTENTS is the contents of the paragraph, as a string.  INFO is
 the plist used as a communication channel."
-  contents)
+  ;; Ensure that we do not create multiple paragraphs, when a single
+  ;; paragraph is expected.
+  ;; Multiple newlines may appear in CONTENTS, for example, when
+  ;; certain objects are stripped from export, leaving single newlines
+  ;; before and after.
+  (org-remove-blank-lines contents))
 
 ;;;; Plain List
 

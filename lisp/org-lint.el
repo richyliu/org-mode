@@ -3,7 +3,7 @@
 ;; Copyright (C) 2015-2024 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <mail@nicolasgoaziou.fr>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 
 ;; This file is part of GNU Emacs.
 
@@ -388,14 +388,25 @@ called with one argument, the key used for comparison."
     (dolist (e originals reports) (funcall make-report (cdr e) (car e)))))
 
 (defun org-lint-misplaced-heading (ast)
-  "Check for accidentally misplaced heading lines."
+  "Check for accidentally misplaced heading lines.
+Example:
+** Heading 1
+** Heading 2** Oops heading 3
+** Heading 4"
   (org-with-point-at ast
     (goto-char (point-min))
     (let (result)
       ;; Heuristics for 2+ level heading not at bol.
       (while (re-search-forward (rx (not (any "*\n\r ,")) ;; Not a bol; not escaped ,** heading; not " *** words"
                                     "*" (1+ "*") " ") nil t)
-        (push (list (match-beginning 0) "Possibly misplaced heading line") result))
+        ;; Limit false-positive rate by only complaining about
+        ;; ** Heading** Heading and
+        ;; ** Oops heading
+        ;; Paragraph** Oops heading
+        (when (org-element-type-p
+               (org-element-at-point)
+               '(paragraph headline))
+          (push (list (match-beginning 0) "Possibly misplaced heading line") result)))
       result)))
 
 (defun org-lint-duplicate-custom-id (ast)
@@ -541,7 +552,10 @@ Use :header-args: instead"
   (org-element-map ast 'src-block
     (lambda (b)
       (when-let ((lang (org-element-property :language b)))
-        (unless (functionp (intern (format "org-babel-execute:%s" lang)))
+        (unless (or (functionp (intern (format "org-babel-execute:%s" lang)))
+                    ;; No babel backend, but there is corresponding
+                    ;; major mode.
+                    (fboundp (org-src-get-lang-mode lang)))
 	  (list (org-element-property :post-affiliated b)
 	        (format "Unknown source block language: '%s'" lang)))))))
 

@@ -3,7 +3,7 @@
 ;; Copyright (C) 2010-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;;
 ;; This file is part of GNU Emacs.
 
@@ -470,8 +470,8 @@ See also `org-refile-use-outline-path'.
 
 If you are using target caching (see `org-refile-use-cache'), you
 have to clear the target cache in order to find new targets.
-This can be done with a `0' prefix (`C-0 C-c C-w') or a triple
-prefix argument (`C-u C-u C-u C-c C-w')."
+This can be done with a `0' prefix (\\`C-0 C-c C-w') or a triple
+prefix argument (\\`C-u C-u C-u C-c C-w')."
   (interactive "P")
   (if (member arg '(0 (64)))
       (org-refile-cache-clear)
@@ -541,8 +541,7 @@ prefix argument (`C-u C-u C-u C-c C-w')."
 			    (< pos (save-excursion
 				     (org-end-of-subtree t t))))))
 	    (error "Cannot refile to position inside the tree or region"))
-	  (setq nbuf (or (find-buffer-visiting file)
-			 (find-file-noselect file)))
+	  (setq nbuf (find-file-noselect file 'nowarn))
 	  (if (and arg (not (equal arg 3)))
 	      (progn
 		(pop-to-buffer-same-window nbuf)
@@ -558,12 +557,11 @@ prefix argument (`C-u C-u C-u C-c C-w')."
             (let ((origin (point-marker)))
               ;; Handle special case when we refile to exactly same
               ;; location with tree promotion/demotion.  Point marker
-              ;; saved by `org-width-wide-buffer' (`save-excursion')
+              ;; saved by `org-with-wide-buffer' (`save-excursion')
               ;; will then remain before the inserted subtree in
               ;; unexpected location.
               (set-marker-insertion-type origin t)
-	      (with-current-buffer (setq nbuf (or (find-buffer-visiting file)
-						  (find-file-noselect file)))
+	      (with-current-buffer (setq nbuf (find-file-noselect file 'nowarn))
 	        (setq reversed (org-notes-order-reversed-p))
 	        (org-with-wide-buffer
 	         (if pos
@@ -668,12 +666,12 @@ this function appends the default value from
 		  #'completing-read))
 	 (extra (if org-refile-use-outline-path "/" ""))
 	 (cbnex (concat (buffer-name) extra))
-	 (filename (and cfn (expand-file-name cfn)))
+	 (filename (and cfn (file-truename cfn)))
 	 (tbl (mapcar
 	       (lambda (x)
 		 (if (and (not (member org-refile-use-outline-path
 				       '(file full-file-path title)))
-			  (not (equal filename (nth 1 x))))
+			  (not (equal filename (file-truename (nth 1 x)))))
 		     (cons (concat (car x) extra " ("
 				   (file-name-nondirectory (nth 1 x)) ")")
 			   (cdr x))
@@ -727,8 +725,7 @@ this function appends the default value from
       (when (org-string-nw-p re)
 	(setq buffer (if (markerp pos)
 			 (marker-buffer pos)
-		       (or (find-buffer-visiting file)
-			   (find-file-noselect file))))
+		       (find-file-noselect file 'nowarn)))
 	(with-current-buffer buffer
 	  (org-with-wide-buffer
 	   (goto-char pos)
@@ -743,8 +740,7 @@ this function appends the default value from
   (let ((file (nth 1 parent-target))
 	(pos (nth 3 parent-target))
 	level)
-    (with-current-buffer (or (find-buffer-visiting file)
-			     (find-file-noselect file))
+    (with-current-buffer (find-file-noselect file 'nowarn)
       (org-with-wide-buffer
        (if pos
 	   (goto-char pos)
@@ -779,6 +775,14 @@ this function appends the default value from
 				 (concat string (substring r 0 (match-end 0)) f)
 			       x)))
 			 (all-completions string thetable predicate))))
+              ((eq (car-safe flag) 'boundaries)
+               ;; See `completion-file-name-table'.
+               (let ((start (or (and (string-match "/" string)
+                                     (match-beginning 0))
+                                (length string)))
+                     (end (and (string-match "/" (cdr flag))
+                               (match-beginning 0))))
+                 `(boundaries ,start . ,end)))
 	      ;; Exact match?
 	      ((eq flag 'lambda) (assoc string thetable))))
 	   args)))

@@ -22,6 +22,8 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
 
+;;; Commentary:
+
 ;;; Code:
 
 (require 'org-macs)
@@ -238,7 +240,10 @@ this template."
                             ((not (string= replacement
 					 (buffer-substring begin end)))
 			     (delete-region begin end)
-			     (insert replacement))))))
+			     (insert replacement))
+                            ;; Replacement is the same as the source
+                            ;; block.  Continue onwards.
+                            (t (goto-char end))))))
 		      ((or `babel-call `inline-babel-call)
 		       (org-babel-exp-do-export
 			(or (org-babel-lob-get-info element)
@@ -262,8 +267,9 @@ this template."
 				   (if (not (eq type 'babel-call))
 				       (progn (skip-chars-forward " \t")
 					      (point))
-				     (skip-chars-forward " \r\t\n")
-				     (line-beginning-position)))))
+                                     (unless (eobp)
+				       (skip-chars-forward " \r\t\n")
+				       (line-beginning-position))))))
                           ((not rep)
                            ;; Replacement code cannot be determined.
                            ;; Leave the code block as is.
@@ -288,8 +294,9 @@ this template."
 			   (cond ((not replacement) (goto-char end))
 				 ((equal replacement "")
 				  (goto-char end)
-				  (skip-chars-forward " \r\t\n")
-				  (forward-line 0)
+                                  (unless (eobp)
+				    (skip-chars-forward " \r\t\n")
+				    (forward-line 0))
 				  (delete-region begin (point)))
 				 (t
 				  (if (org-src-preserve-indentation-p element)
@@ -367,7 +374,7 @@ The function respects the value of the :exports header argument."
        nil))))
 
 (defcustom org-babel-exp-code-template
-  "#+begin_src %lang%switches%flags\n%body\n#+end_src"
+  "#+begin_src %lang%switches%header-args\n%body\n#+end_src"
   "Template used to export the body of code blocks.
 This template may be customized to include additional information
 such as the code block name, or the values of particular header
@@ -378,17 +385,17 @@ and the following %keys may be used.
  name ------ the name of the code block
  body ------ the body of the code block
  switches -- the switches associated to the code block
- flags ----- the flags passed to the code block
+ header-args the header arguments of the code block
 
 In addition to the keys mentioned above, every header argument
 defined for the code block may be used as a key and will be
 replaced with its value."
   :group 'org-babel
   :type 'string
-  :package-version '(Org . "9.6"))
+  :package-version '(Org . "9.7"))
 
 (defcustom org-babel-exp-inline-code-template
-  "src_%lang[%switches%flags]{%body}"
+  "src_%lang[%switches%header-args]{%body}"
   "Template used to export the body of inline code blocks.
 This template may be customized to include additional information
 such as the code block name, or the values of particular header
@@ -399,15 +406,14 @@ and the following %keys may be used.
  name ------ the name of the code block
  body ------ the body of the code block
  switches -- the switches associated to the code block
- flags ----- the flags passed to the code block
+ header-args the header arguments of the code block
 
 In addition to the keys mentioned above, every header argument
 defined for the code block may be used as a key and will be
 replaced with its value."
   :group 'org-babel
   :type 'string
-  :version "26.1"
-  :package-version '(Org . "8.3"))
+  :package-version '(Org . "9.7"))
 
 (defun org-babel-exp-code (info type)
   "Return the original code block of TYPE defined by INFO, formatted for export."
@@ -432,6 +438,11 @@ replaced with its value."
 		      (and (org-string-nw-p f) (concat " " f))))
      ("flags" . ,(let ((f (assq :flags (nth 2 info))))
 		   (and f (concat " " (cdr f)))))
+     ("header-args"
+      .
+      ,(org-babel-exp--at-source
+           (when-let ((params (org-element-property :parameters (org-element-context))))
+             (concat " " params))))
      ,@(mapcar (lambda (pair)
 		 (cons (substring (symbol-name (car pair)) 1)
 		       (format "%S" (cdr pair))))

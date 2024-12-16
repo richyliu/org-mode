@@ -4,7 +4,7 @@
 
 ;; Author: Nicolas Goaziou <n.goaziou at gmail dot com>
 ;; Maintainer: Daniel Fleischer <danflscr@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 
 ;; This file is part of GNU Emacs.
 
@@ -135,6 +135,7 @@
     (:latex-default-table-environment nil nil org-latex-default-table-environment)
     (:latex-default-quote-environment nil nil org-latex-default-quote-environment)
     (:latex-default-table-mode nil nil org-latex-default-table-mode)
+    (:latex-default-footnote-command "LATEX_FOOTNOTE_COMMAND" nil org-latex-default-footnote-command)
     (:latex-diary-timestamp-format nil nil org-latex-diary-timestamp-format)
     (:latex-engraved-options nil nil org-latex-engraved-options)
     (:latex-engraved-preamble nil nil org-latex-engraved-preamble)
@@ -667,6 +668,17 @@ The function result will be used in the section format string."
 
 ;;;; Footnotes
 
+(defcustom org-latex-default-footnote-command "\\footnote{%s%s}"
+  "Default command used to insert footnotes.
+Customize this command if the LaTeX class provides a different
+command like \"\\sidenote{%s%s}\" that you want to use.
+The value will be passed as an argument to `format' as the following
+  (format org-latex-default-footnote-command
+     footnote-description footnote-label)"
+  :group 'org-export-latex
+  :package-version '(Org . "9.7")
+  :type 'string)
+
 (defcustom org-latex-footnote-separator "\\textsuperscript{,}\\,"
   "Text used to separate footnotes."
   :group 'org-export-latex
@@ -779,7 +791,6 @@ default we use here encompasses both."
   "Format string for links with unknown path type."
   :group 'org-export-latex
   :type 'string)
-
 
 ;;;; Tables
 
@@ -982,7 +993,7 @@ The most comprehensive option can be set with,
 
 which causes source code to be run through
 `engrave-faces-latex-buffer', which generates colorings using
-Emacs' font-lock information.  This requires the Emacs package
+Emacs's font-lock information.  This requires the Emacs package
 engrave-faces (available from GNU ELPA), and the LaTeX package
 fvextra be installed.
 
@@ -1380,7 +1391,7 @@ default values of which are given by `org-latex-engraved-preamble' and
                         "\n"))
                (t (funcall gen-theme-spec engraved-theme))))
            (funcall gen-theme-spec engraved-theme))
-       (warn "Cannot engrave source blocks. Consider installing `engrave-faces'.")
+       (warn "Cannot engrave source blocks.  Consider installing `engrave-faces'.")
        "% WARNING syntax highlighting unavailable as engrave-faces-latex was missing.\n")
      "\n")))
 
@@ -1519,8 +1530,7 @@ The regular expressions are used to find possible warnings in the
 log of a LaTeX-run.  These warnings will be reported after
 calling `org-latex-compile'."
   :group 'org-export-latex
-  :version "26.1"
-  :package-version '(Org . "8.3")
+  :package-version '(Org . "9.7")
   :type '(repeat
 	  (cons
 	   (regexp :tag "Regexp")
@@ -1612,6 +1622,11 @@ For non-floats, see `org-latex--wrap-label'."
 	      (let ((type* (if (eq type 'latex-environment)
 			       (org-latex--environment-type element)
 			     type)))
+                ;; \captionof{%s}
+                ;; %s must be a registered LaTeX environment.
+                ;; figure is always there, while listing is defined by
+                ;; additional packages.
+                ;; See https://list.orgmode.org/orgmode/87twtovkjh.fsf@gmx.us/
 		(if nonfloat
 		    (cl-case type*
 		      (paragraph "figure")
@@ -2234,7 +2249,7 @@ CONTENTS is nil.  INFO is a plist holding contextual information."
       (t
        (let ((def (org-export-get-footnote-definition footnote-reference info)))
 	 (concat
-	  (format "\\footnote{%s%s}" (org-trim (org-export-data def info))
+	  (format (plist-get info :latex-default-footnote-command) (org-trim (org-export-data def info))
 		  ;; Only insert a \label if there exist another
 		  ;; reference to def.
 		  (cond ((not label) "")
@@ -3034,9 +3049,7 @@ the plist used as a communication channel."
   ;; Multiple newlines may appear in CONTENTS, for example, when
   ;; certain objects are stripped from export, leaving single newlines
   ;; before and after.
-  (replace-regexp-in-string
-   (rx "\n" (1+ (0+ space) "\n")) "\n"
-   contents))
+  (org-remove-blank-lines contents))
 
 
 ;;;; Plain List
@@ -3535,7 +3548,7 @@ and FLOAT are extracted from SRC-BLOCK and INFO in `org-latex-src-block'."
 When the THEME symbol is non-nil, that theme will be used.
 
 When INLINE is nil, a Verbatim environment wrapped in a Code
-environment will be used. When t, a Verb command will be used.
+environment will be used.  When t, a Verb command will be used.
 
 When OPTIONS is provided, as either a string or list of key-value
 pairs accepted by `org-latex--make-option-string', it is passed
@@ -3578,7 +3591,7 @@ to the Verbatim environment or Verb command."
                     engraved-wrapped
                     "}")
           engraved-wrapped))
-    (user-error "Cannot engrave code as `engrave-faces-latex' is unavailable.")))
+    (user-error "Cannot engrave code as `engrave-faces-latex' is unavailable")))
 
 (cl-defun org-latex-src-block--engraved
     (&key src-block info lang caption caption-above-p num-start retain-labels attributes float &allow-other-keys)
@@ -3747,7 +3760,7 @@ CONTENTS is the contents of the object."
 ;; takes care of tables with a "verbatim" mode.  Otherwise, it
 ;; delegates the job to either `org-latex--table.el-table',
 ;; `org-latex--org-table', `org-latex--math-table' or
-;; `org-latex--org-align-string-tabbing' functions,
+;; `org-table--org-tabbing' functions,
 ;; depending of the type of the table and the mode requested.
 ;;
 ;; `org-latex--align-string' is a subroutine used to build alignment
@@ -4270,7 +4283,10 @@ will be displayed when `org-export-show-temporary-export-buffer'
 is non-nil."
   (interactive)
   (org-export-to-buffer 'latex "*Org LATEX Export*"
-    async subtreep visible-only body-only ext-plist (lambda () (LaTeX-mode))))
+    async subtreep visible-only body-only ext-plist
+    (if (fboundp 'major-mode-remap)
+        (major-mode-remap 'latex-mode)
+      #'LaTeX-mode)))
 
 ;;;###autoload
 (defun org-latex-convert-region-to-latex ()

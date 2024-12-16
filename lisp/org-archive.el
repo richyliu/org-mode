@@ -3,7 +3,7 @@
 ;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -254,8 +254,7 @@ direct children of this heading."
 	     (newfile-p (and (org-string-nw-p afile)
 			     (not (file-exists-p afile))))
 	     (buffer (cond ((not (org-string-nw-p afile)) this-buffer)
-			   ((find-buffer-visiting afile))
-			   ((find-file-noselect afile))
+			   ((find-file-noselect afile 'nowarn))
 			   (t (error "Cannot access file \"%s\"" afile))))
 	     (org-odd-levels-only
 	      (if (local-variable-p 'org-odd-levels-only (current-buffer))

@@ -1157,6 +1157,15 @@ CLOCK: [2023-10-13 Fri 14:40]--[2023-10-13 Fri 14:51] =>  0:11"
 				  (org-element-property :value clock))
 	    "[2012-01-01 sun. 00:01]"))
     (should-not (org-element-property :duration clock)))
+  ;; clock string should not be case-sensitive.
+  (let ((clock (org-test-with-temp-text "Clock: [2012-01-01 sun. 00:01]"
+		 (org-element-at-point))))
+    (should (eq (org-element-property :status clock) 'running))
+    (should
+     (equal (org-element-property :raw-value
+				  (org-element-property :value clock))
+	    "[2012-01-01 sun. 00:01]"))
+    (should-not (org-element-property :duration clock)))
   ;; Closed clock.
   (let ((clock
 	 (org-test-with-temp-text
@@ -1166,7 +1175,15 @@ CLOCK: [2023-10-13 Fri 14:40]--[2023-10-13 Fri 14:51] =>  0:11"
     (should (equal (org-element-property :raw-value
 					 (org-element-property :value clock))
 		   "[2012-01-01 sun. 00:01]--[2012-01-01 sun. 00:02]"))
-    (should (equal (org-element-property :duration clock) "0:01"))))
+    (should (equal (org-element-property :duration clock) "0:01")))
+  ;; Closed clock without timestamp.
+  (let ((clock
+	 (org-test-with-temp-text
+	     "CLOCK: =>  0:11"
+	   (org-element-at-point))))
+    (should (eq (org-element-property :status clock) 'closed))
+    (should-not (org-element-property :value clock))
+    (should (equal (org-element-property :duration clock) "0:11"))))
 
 
 ;;;; Code
@@ -3199,11 +3216,18 @@ Outside list"
      (let ((timestamp (org-element-context)))
        (or (org-element-property :hour-end timestamp)
 	   (org-element-property :minute-end timestamp)))))
-  ;; With repeater, warning delay and both.
+  ;; With repeater, repeater deadline, warning delay and combinations.
   (should
    (eq 'catch-up
        (org-test-with-temp-text "<2012-03-29 Thu ++1y>"
 	 (org-element-property :repeater-type (org-element-context)))))
+  (should
+   (equal '(catch-up 2 year)
+       (org-test-with-temp-text "<2012-03-29 Thu ++1y/2y>"
+         (let ((ts (org-element-context)))
+           (list (org-element-property :repeater-type ts)
+                 (org-element-property :repeater-deadline-value ts)
+                 (org-element-property :repeater-deadline-unit ts))))))
   (should
    (eq 'first
        (org-test-with-temp-text "<2012-03-29 Thu --1y>"
@@ -3214,6 +3238,14 @@ Outside list"
 	    (let ((ts (org-element-context)))
 	      (list (org-element-property :repeater-type ts)
 		    (org-element-property :warning-type ts))))))
+  (should
+   (equal '(cumulate all 2 year)
+          (org-test-with-temp-text "<2012-03-29 Thu +1y/2y -1y>"
+            (let ((ts (org-element-context)))
+              (list (org-element-property :repeater-type ts)
+                    (org-element-property :warning-type ts)
+                    (org-element-property :repeater-deadline-value ts)
+                    (org-element-property :repeater-deadline-unit ts))))))
   ;; :range-type property
   (should
    (eq
@@ -3297,7 +3329,16 @@ Outside list"
    (= 2
       (org-test-with-temp-text "__test__"
 	(length
-	 (org-element-map (org-element-parse-buffer) 'underline 'identity))))))
+	 (org-element-map (org-element-parse-buffer) 'underline 'identity)))))
+  ;; Starting after non-blank
+  (should
+   (eq 'underline
+       (org-test-with-temp-text "(_under<point>line_)"
+         (org-element-type (org-element-context)))))
+  (should-not
+   (eq 'underline
+       (org-test-with-temp-text "x_under<point>line_)"
+         (org-element-type (org-element-context))))))
 
 
 ;;;; Verbatim
@@ -3649,7 +3690,12 @@ Outside list"
    (string-match
     "CLOCK: \\[2012-01-01 .* 00:01\\]--\\[2012-01-01 .* 00:02\\] =>  0:01"
     (org-test-parse-and-interpret "
-CLOCK: [2012-01-01 sun. 00:01]--[2012-01-01 sun. 00:02] =>  0:01"))))
+CLOCK: [2012-01-01 sun. 00:01]--[2012-01-01 sun. 00:02] =>  0:01")))
+  ;; Closed clock without timestamp.
+  (should
+   (string-match
+    "CLOCK:  =>  0:01"
+    (org-test-parse-and-interpret "CLOCK: => 0:01"))))
 
 (ert-deftest test-org-element/comment-interpreter ()
   "Test comment interpreter."
@@ -3943,9 +3989,32 @@ DEADLINE: <2012-03-29 thu.> SCHEDULED: <2012-03-29 thu.> CLOSED: [2012-03-29 thu
 		 (org-test-parse-and-interpret
 		  "<2012-03-29 thu. 16:40-16:41>")))
   ;; Diary.
-  (should (equal (org-test-parse-and-interpret "<%%diary-float t 4 2>")
-		 "<%%diary-float t 4 2>\n"))
-  ;; Timestamp with repeater interval, with delay, with both.
+  (should (equal (org-test-parse-and-interpret "<%%(diary-float t 4 2)>")
+		 "<%%(diary-float t 4 2)>\n"))
+  ;; Diary with time.
+  (should (equal (org-test-parse-and-interpret "<%%(diary-float t 4 2) 12:00>")
+		 "<%%(diary-float t 4 2) 12:00>\n"))
+  (should (equal (org-test-parse-and-interpret "<%%(diary-cyclic 1 1 1 2020) 12:00-14:00>")
+		 "<%%(diary-cyclic 1 1 1 2020) 12:00-14:00>\n"))
+  (org-test-with-temp-text "<%%(diary-float t 4 2) 12:00>"
+    (let ((ts (org-element-context)))
+      (should (org-element-type-p ts 'timestamp))
+      (should (eq 'diary (org-element-property :type ts)))
+      (should (eq nil (org-element-property :range-type ts)))
+      (should (equal 12 (org-element-property :hour-start ts)))
+      (should (equal 0 (org-element-property :minute-start ts)))
+      (should-not (org-element-property :hour-end ts))
+      (should-not (org-element-property :minute-end ts))))
+  (org-test-with-temp-text "<%%(diary-float t 4 2) 12:00-14:01>"
+    (let ((ts (org-element-context)))
+      (should (org-element-type-p ts 'timestamp))
+      (should (eq 'diary (org-element-property :type ts)))
+      (should (eq 'timerange (org-element-property :range-type ts)))
+      (should (equal 12 (org-element-property :hour-start ts)))
+      (should (equal 0 (org-element-property :minute-start ts)))
+      (should (equal 14 (org-element-property :hour-end ts)))
+      (should (equal 1 (org-element-property :minute-end ts)))))
+  ;; Timestamp with repeater interval, repeater deadline, with delay, with combinations.
   (should
    (string-match "<2012-03-29 .* \\+1y>"
 		 (org-test-parse-and-interpret "<2012-03-29 thu. +1y>")))
@@ -3956,6 +4025,15 @@ DEADLINE: <2012-03-29 thu.> SCHEDULED: <2012-03-29 thu.> CLOSED: [2012-03-29 thu
      '(timestamp
        (:type active :year-start 2012 :month-start 3 :day-start 29
 	      :repeater-type cumulate :repeater-value 1 :repeater-unit year))
+     nil)))
+  (should
+   (string-match
+    "<2012-03-29 .* \\+1y/2y>"
+    (org-element-timestamp-interpreter
+     '(timestamp
+       (:type active :year-start 2012 :month-start 3 :day-start 29
+              :repeater-type cumulate :repeater-value 1 :repeater-unit year
+              :repeater-deadline-value 2 :repeater-deadline-unit year))
      nil)))
   (should
    (string-match
@@ -3973,6 +4051,16 @@ DEADLINE: <2012-03-29 thu.> SCHEDULED: <2012-03-29 thu.> CLOSED: [2012-03-29 thu
        (:type active :year-start 2012 :month-start 3 :day-start 29
 	      :warning-type all :warning-value 1 :warning-unit year
 	      :repeater-type cumulate :repeater-value 1 :repeater-unit year))
+     nil)))
+  (should
+   (string-match
+    "<2012-03-29 .* \\+1y/2y -1y>"
+    (org-element-timestamp-interpreter
+     '(timestamp
+       (:type active :year-start 2012 :month-start 3 :day-start 29
+              :warning-type all :warning-value 1 :warning-unit year
+              :repeater-type cumulate :repeater-value 1 :repeater-unit year
+              :repeater-deadline-value 2 :repeater-deadline-unit year))
      nil)))
   ;; Timestamp range with repeater interval
   (should
@@ -4918,6 +5006,18 @@ Text
 
 
 ;;; Test Cache.
+(ert-deftest test-org-element/cache-map ()
+  "Test `org-element-cache-map'."
+  (org-test-with-temp-text "* headline\n:DRAWER:\nparagraph\n:END:\n* headline 2"
+    (should
+     (equal
+      '(org-data headline section drawer paragraph headline)
+      (org-element-cache-map #'car :granularity 'element))))
+  (should
+   (equal
+    '(org-data headline section drawer paragraph)
+    (org-test-with-temp-text "* headline\n:DRAWER:\nparagraph\n:END:"
+      (org-element-cache-map #'car :granularity 'element)))))
 
 (ert-deftest test-org-element/cache ()
   "Test basic expectations and common pitfalls for cache."

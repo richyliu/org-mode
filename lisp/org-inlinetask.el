@@ -3,7 +3,7 @@
 ;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
 ;;
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 
 ;; This file is part of GNU Emacs.
@@ -172,7 +172,7 @@ The number of levels is controlled by `org-inlinetask-min-level'."
        (not (org-inlinetask-end-p))))
 
 (defun org-inlinetask-in-task-p ()
-  "Return true if point is inside an inline task."
+  "Return non-nil if point is inside an inline task."
   (save-excursion
     (forward-line 0)
     (let ((case-fold-search t))

@@ -3,7 +3,7 @@
 ;; Copyright (C) 2010-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -371,6 +371,10 @@ be replaced with content and expanded:
   %^{prompt}  Prompt the user for a string and replace this sequence with it.
               A default value and a completion table can be specified like this:
               %^{prompt|default|completion2|completion3|...}.
+  %^{prompt}X where X is one of g, G, t, T, u, U, C, or L.
+              Same as %^X (see above), but also supply custom
+              prompt/completions.  Default value and completions as in
+              %^{prompt|default|...}X are allowed.
   %?          After completing the template, position cursor here.
   %\\1 ... %\\N Insert the text entered at the nth %^{prompt}, where N
               is a number, starting from 1.
@@ -398,14 +402,13 @@ calendar                |  %:type %:date
 When you need to insert a literal percent sign in the template,
 you can escape ambiguous cases with a backward slash, e.g., \\%i."
   :group 'org-capture
-  :package-version '(Org . "9.6")
+  :package-version '(Org . "9.7")
   :set (lambda (s v) (set-default-toplevel-value s (org-capture-upgrade-templates v)))
   :type
   (let ((file-variants '(choice :tag "Filename       "
 				(file :tag "Literal")
 				(function :tag "Function")
-				(variable :tag "Variable")
-				(sexp :tag "Form"))))
+				(variable :tag "Variable"))))
     `(repeat
       (choice :value ("" "" entry (file "~/org/notes.org") "")
 	      (list :tag "Multikey description"
@@ -448,12 +451,12 @@ you can escape ambiguous cases with a backward slash, e.g., \\%i."
 			    (list :tag "File & function"
 				  (const :format "" file+function)
 				  ,file-variants
-				  (sexp :tag "  Function"))
+				  (function :tag "  Function"))
 			    (list :tag "Current clocking task"
 				  (const :format "" clock))
 			    (list :tag "Function"
 				  (const :format "" function)
-				  (sexp :tag "  Function")))
+				  (function :tag "  Function")))
 		    (choice :tag "Template       "
 			    (string)
 			    (list :tag "File"
@@ -1170,9 +1173,9 @@ When INHIBIT-WCONF-STORE is non-nil, don't store the window configuration, as it
 may have been stored before."
   (unless inhibit-wconf-store
     (org-capture-put :return-to-wconf (current-window-configuration)))
-  (delete-other-windows)
-  (switch-to-buffer-other-window
-   (org-capture-get-indirect-buffer (org-capture-get :buffer) "CAPTURE"))
+  (pop-to-buffer
+   (org-capture-get-indirect-buffer (org-capture-get :buffer) "CAPTURE")
+   '(org-display-buffer-split))
   (widen)
   (org-fold-show-all)
   (goto-char (org-capture-get :pos))
@@ -1671,9 +1674,12 @@ Expansion occurs in a temporary Org mode buffer."
 		  (org-no-properties org-clock-heading)
 		""))
 	 (v-K (if (marker-buffer org-clock-marker)
-                  (org-with-point-at org-clock-marker
-                    (org-store-link nil nil))
-		""))
+                  (let ((original-link-plist org-store-link-plist)
+                        (clocked-task-link (org-with-point-at org-clock-marker
+                                             (org-store-link nil nil))))
+                    (setq org-store-link-plist original-link-plist)
+                    clocked-task-link)
+	        ""))
 	 (v-f (or (org-capture-get :original-file-nondirectory) ""))
 	 (v-F (or (org-capture-get :original-file) ""))
 	 (org-capture--clipboards

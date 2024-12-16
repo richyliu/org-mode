@@ -49,8 +49,6 @@
 (require 'org-fold-core)
 
 (defvar org-inlinetask-min-level)
-(defvar org-link--link-folding-spec)
-(defvar org-link--description-folding-spec)
 (defvar org-odd-levels-only)
 (defvar org-drawer-regexp)
 (defvar org-property-end-re)
@@ -255,6 +253,7 @@ Also, see `org-fold-catch-invisible-edits'."
       (:ellipsis . ,ellipsis)
       (:fragile . ,#'org-fold--reveal-outline-maybe)
       (:isearch-open . t)
+      (:font-lock . t)
       ;; This is needed to make sure that inserting a
       ;; new planning line in folded heading is not
       ;; revealed.  Also, the below combination of :front-sticky and
@@ -267,6 +266,7 @@ Also, see `org-fold-catch-invisible-edits'."
       (:ellipsis . ,ellipsis)
       (:fragile . ,#'org-fold--reveal-drawer-or-block-maybe)
       (:isearch-open . t)
+      (:font-lock . t)
       (:front-sticky . t)
       (:alias . ( block center-block comment-block
                   dynamic-block example-block export-block
@@ -276,10 +276,9 @@ Also, see `org-fold-catch-invisible-edits'."
       (:ellipsis . ,ellipsis)
       (:fragile . ,#'org-fold--reveal-drawer-or-block-maybe)
       (:isearch-open . t)
+      (:font-lock . t)
       (:front-sticky . t)
-      (:alias . (drawer property-drawer)))
-     ,org-link--description-folding-spec
-     ,org-link--link-folding-spec)))
+      (:alias . (drawer property-drawer))))))
 
 ;;;; Searching and examining folded text
 
@@ -676,19 +675,12 @@ DETAIL is either nil, `minimal', `local', `ancestors',
             (org-with-point-at (car region)
               (forward-line 0)
               (let (font-lock-extend-region-functions)
-                (font-lock-fontify-region (max (point-min) (1- (car region))) (cdr region))))))
-        ;; Unfold links.
-        (let (region)
-          (dolist (spec '(org-link org-link-description))
-            (setq region (org-fold-get-region-at-point spec))
-            (when region (org-fold-region (car region) (cdr region) nil spec)))))
+                (font-lock-fontify-region (max (point-min) (1- (car region))) (cdr region)))))))
       (let (region)
         (dolist (spec (org-fold-core-folding-spec-list))
-          ;; Links are taken care by above.
-          (unless (memq spec '(org-link org-link-description))
-            (setq region (org-fold-get-region-at-point spec))
-            (when region
-              (org-fold-region (car region) (cdr region) nil spec))))))
+          (setq region (org-fold-get-region-at-point spec))
+          (when region
+            (org-fold-region (car region) (cdr region) nil spec)))))
     (unless (org-before-first-heading-p)
       (org-with-limited-levels
        (cl-case detail
@@ -741,8 +733,7 @@ go to the parent and show the entire tree."
 ;;; Handling changes in folded elements
 
 (defun org-fold--extend-changed-region (from to)
-  "Consider folded regions in the next/previous line when fixing
-region visibility.
+  "Consider folded regions in the next/previous line when fixing region visibility.
 This function is intended to be used as a member of
 `org-fold-core-extend-changed-region-functions'."
   ;; If the edit is done in the first line of a folded drawer/block,

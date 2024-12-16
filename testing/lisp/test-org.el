@@ -1744,6 +1744,18 @@ CLOCK: [2022-09-17 sam. 11:00]--[2022-09-17 sam. 11:46] =>  0:46"
 	      (electric-indent-local-mode 1)
 	      (call-interactively 'org-return)
 	      (buffer-string)))))
+  ;; Make sure that we do not mess things up when indenting remotely
+  ;; in src block buffer.
+  (let ((org-edit-src-content-indentation 2))
+    (should
+     ;; Add `org-edit-src-content-indentation' and no more.
+     ;; https://orgmode.org/list/5O9VMGb6WRaqeHR5_NXTb832Z2Lek_5L40YPDA52-S3kPwGYJspI8kLWaGtuq3DXyhtHpj1J7jTIXb39RX9BtCa2ecrWHjijZqI8QAD742U=@proton.me
+     (equal "#+begin_src fundamental\n  \n#+end_src" ; 2 spaces
+            (org-test-with-temp-text "#+begin_src fundamental<point>\n#+end_src"
+              (electric-indent-local-mode 1)
+              (call-interactively 'org-return)
+              (should (looking-at-p "\n\\#"))
+              (buffer-string)))))
   ;; C-j, like `electric-newline-and-maybe-indent', should not indent.
   (should
    (equal "  Para\ngraph"
@@ -3631,6 +3643,20 @@ Foo Bar
 	 nil)))))
 
 
+;;; Thing at point
+
+(ert-deftest test-org/thing-at-point/url ()
+  "Test that `thing-at-point' returns the URL at point."
+  (org-test-with-temp-text
+      "[[https://www.gnu.org/software/emacs/][GNU Emacs]]"
+    (when (boundp 'thing-at-point-provider-alist)
+      (should (string= (thing-at-point 'url)
+                       "https://www.gnu.org/software/emacs/")))
+    (when (boundp 'bounds-of-thing-at-point-provider-alist)
+      (should (equal (bounds-of-thing-at-point 'url)
+                     '(1 . 51))))))
+
+
 ;;; Node Properties
 
 (ert-deftest test-org/accumulated-properties-in-drawers ()
@@ -4072,7 +4098,17 @@ text"
     (save-excursion
       (goto-char (point-min))
       (org-ctrl-c-ctrl-c))
-    (should (org-fold-folded-p (point) 'outline))))
+    (should (org-fold-folded-p (point) 'outline)))
+  ;; Quit column view.
+  (org-test-with-temp-text
+      "* Heading<point>
+text"
+    (org-columns)
+    (should org-columns-overlays)
+    (save-excursion
+      (goto-char (point-min))
+      (org-ctrl-c-ctrl-c))
+    (should-not org-columns-overlays)))
 
 
 ;;; Navigation
@@ -8896,7 +8932,22 @@ CLOSED: %s
     (let ((org-todo-keywords '((sequence "TODO" "DONE"))))
       (org-test-with-temp-text "* TODO H\n<2012-03-29 Thu +2y>"
 	(org-todo '-)
-	(buffer-string))))))
+	(buffer-string)))))
+  ;; C-u forces logging note.
+  ;; However, logging falls back to "time" when `org-inhibit-logging'
+  ;; is 'note.
+  (dolist (org-inhibit-logging '(nil t note))
+    (let ((org-todo-keywords '((sequence "TODO" "DONE"))))
+      (org-test-with-temp-text "* TODO H\n"
+        (unwind-protect
+            (progn
+              (org-todo '(4))
+              (should (string-match-p "DONE" (buffer-string)))
+              (should (member #'org-add-log-note post-command-hook))
+              (if (eq org-inhibit-logging 'note)
+                  (should (eq org-log-note-how 'time))
+                (should (eq org-log-note-how 'note))))
+          (remove-hook 'post-command-hook #'org-add-log-note))))))
 
 
 ;;; Timestamps API
@@ -9356,6 +9407,18 @@ CLOSED: %s
 	  (org-test-with-temp-text "* H1\n<point>Paragraph\n* H2"
 	    (org-paste-subtree nil "* Text")
 	    (buffer-string))))
+  ;; With prefix argument, move to the end of subtree.
+  (should
+   (equal "* H1\nParagraph\n** H1.1\n* Text\n* H2"
+	  (org-test-with-temp-text "* H1\n<point>Paragraph\n** H1.1\n* H2"
+	    (org-paste-subtree '(4) "* Text")
+	    (buffer-string))))
+  ;; With double prefix argument, move to first sibling
+  (should
+   (equal "* H1\nParagraph\n** Text\n** H1.1\n* H2"
+	  (org-test-with-temp-text "* H1\n<point>Paragraph\n** H1.1\n* H2"
+	    (org-paste-subtree '(16) "* Text")
+	    (buffer-string))))
   ;; If point is between two headings, use the deepest level.
   (should
    (equal "* H1\n\n* Text\n* H2"
@@ -9370,6 +9433,30 @@ CLOSED: %s
   (should
    (equal "* H1\n\n** Text\n** H2"
 	  (org-test-with-temp-text "* H1\n<point>\n** H2"
+	    (org-paste-subtree nil "* Text")
+	    (buffer-string))))
+  ;; When point is on heading at bol, insert before
+  (should
+   (equal "* Text\n* H1\n** H2"
+	  (org-test-with-temp-text "<point>* H1\n** H2"
+	    (org-paste-subtree nil "*** Text")
+	    (buffer-string))))
+  ;; With prefix argument, ignore that we are at bol
+  (should
+   (equal "* H1\n** H2\n* Text\n"
+	  (org-test-with-temp-text "<point>* H1\n** H2"
+	    (org-paste-subtree '(4) "*** Text")
+	    (buffer-string))))
+  ;; When point is on heading but not at bol, use smallest level among
+  ;; current heading and next, inserting before the next heading.
+  (should
+   (equal "* H1\ncontents\n** Text\n** H2"
+	  (org-test-with-temp-text "* H1<point>\ncontents\n** H2"
+	    (org-paste-subtree nil "*** Text")
+	    (buffer-string))))
+  (should
+   (equal "*** H1\ncontents\n*** Text\n* H2"
+	  (org-test-with-temp-text "*** H1<point>\ncontents\n* H2"
 	    (org-paste-subtree nil "* Text")
 	    (buffer-string))))
   ;; When on an empty heading, after the stars, deduce the new level
@@ -9589,6 +9676,85 @@ two
       (should-not (unless (and (stringp err-text)
                                (string-match-p "\\`Invalid format.*%2" err-text))
                     err)))))
+
+
+;;; LaTeX-related functions.
+
+(ert-deftest test-org/format-latex-as-html ()
+  "Test shell special characters escaping in `org-format-latex-as-html'."
+  ;; printf is only available in POSIX-compatible shells.
+  (skip-unless (not (memq system-type '(ms-dos windows-nt))))
+  (let ((org-latex-to-html-convert-command
+         "printf \"<I%%sI>\" %i"))
+    ;; No backslashes added by `shell-quote-argumet'
+    ;; are leaked to command arguments.  See e.g. dash(1) "Double Quotes":
+    ;;
+    ;;     The backslash inside double quotes is historically weird,
+    ;;     and serves to quote only the following characters:
+    ;;         $ ` " \ <newline>.
+    ;;     Otherwise it remains literal.
+    ;;
+    ;; Actually extra backslashes may appear if a user adds
+    ;; double quotes around "%i", however it is not subject
+    ;; of this test.
+    (should
+     (equal "<I(|)`[[\\]]{}#$'!I>"
+            (org-format-latex-as-html "(|)`[[\\]]{}#$'!")))
+    ;; The following tests generate shell errors if %i
+    ;; substitution is not passed throuhg `shell-quote-argument'.
+    ;; Multiple words.
+    (should
+     (equal "<Iwords ; |I>"
+                   (org-format-latex-as-html "words ; |")))
+    ;; Bypass single quote.
+    ;; The same snippet causes shell error if '%i' is wrapped
+    ;; in single quotes in user configuration.
+    (should
+     (equal "<Iapostrophe' ; |I>"
+            (org-format-latex-as-html "apostrophe' ; |")))
+    ;; Bypass double quote.
+    ;; Double quotes around "%i" in user configuration leads
+    ;; to extra backslashes (see above), however likely
+    ;; such user error can not cause execution of the argument
+    ;; as raw shell commands.
+    (should
+     (equal "<Iquote\" ; |I>"
+            (org-format-latex-as-html "quote\" ; |")))))
+
+(defun test-org/extract-mathml-math (xml)
+  "Extract body from result of `org-create-math-formula'."
+  (and (string-match "<math[^>]*>\\(\\(?:.\\|\n\\)*\\)</math>" xml)
+       (match-string 1 xml)))
+
+(ert-deftest test-org/create-math-formula ()
+  "Test shell special characters escaping in `org-create-math-formula'."
+  ;; printf is only available in POSIX-compatible shells.
+  (skip-unless (not (memq system-type '(ms-dos windows-nt))))
+  ;; The function requires <math>...</math> elements.
+  (let ((org-latex-to-mathml-convert-command
+         "printf \"<math xmlns=\\\"http://www.w3.org/1998/Math/MathML\\\"><I%%sI></math>\" %i >%o"))
+    ;; See comments in `test-org/format-latex-as-html'.
+    ;;
+    ;; No backslashes added by `shell-quote-argumet'
+    ;; are leaked to command arguments.
+    (should (equal "<I(|)`[[\\]]{}#$'!I>"
+            (test-org/extract-mathml-math
+             (org-create-math-formula "(|)`[[\\]]{}#$'!"))))
+    ;; Multiple words.
+    (should
+     (equal "<Iwords ; |I>"
+            (test-org/extract-mathml-math
+             (org-create-math-formula "words ; |"))))
+    ;; Bypass single quote.
+    (should
+     (equal "<Iapostrophe' ; |I>"
+            (test-org/extract-mathml-math
+             (org-create-math-formula "apostrophe' ; |"))))
+    ;; Bypass double quote.
+    (should
+     (equal "<Iquote\" ; |I>"
+            (test-org/extract-mathml-math
+             (org-create-math-formula "quote\" ; |"))))))
 
 (provide 'test-org)
 

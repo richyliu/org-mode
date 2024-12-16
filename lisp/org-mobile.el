@@ -2,7 +2,7 @@
 ;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
 ;;
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -392,7 +392,7 @@ agenda view showing the flagged items."
 	  (org-agenda nil "?"))))))
 
 (defun org-mobile-check-setup ()
-  "Check if org-mobile-directory has been set up."
+  "Check if `org-mobile-directory' has been set up."
   (org-mobile-cleanup-encryption-tempfile)
   (unless (and org-directory
 	       (stringp org-directory)
@@ -1057,7 +1057,7 @@ be returned that indicates what went wrong."
 	      (goto-char (match-beginning 4))
 	      (insert new)
 	      (delete-region (point) (+ (point) (length current)))
-	      (org-align-tags))
+	      (when org-auto-align-tags (org-align-tags)))
 	     (t
 	      (error
 	       "Heading changed in the mobile device and on the computer")))))))

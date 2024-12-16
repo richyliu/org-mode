@@ -3,7 +3,7 @@
 ;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -419,7 +419,7 @@ It is probably good to never set this variable to nil, for the sake of
 portability of tables."
   :group 'org-table-calculation
   :type '(choice
-	  (const :tag "Allow to cross" t)
+          (const :tag "Allow crossing hline" t)
 	  (const :tag "Stick to hline" nil)
 	  (const :tag "Error on attempt to cross" error)))
 
@@ -494,6 +494,11 @@ This may be useful when columns have been shrunk."
           (redisplay)
           (let* ((ws (window-start))
                  (beg (save-excursion
+                        ;; Check table at window start, not at point.
+                        ;; Point might be after the table, or at
+                        ;; another table located below the one visible
+                        ;; on top.
+                        (goto-char ws)
                         (goto-char (org-table-begin))
                         (while (or (org-at-table-hline-p)
                                    (looking-at-p ".*|\\s-+<[rcl]?\\([0-9]+\\)?>"))
@@ -617,7 +622,7 @@ This variable is set by `org-before-change-function'.
 `org-table-align' sets it back to nil.")
 
 (defvar orgtbl-after-send-table-hook nil
-  "Hook for functions attaching to `C-c C-c', if the table is sent.
+  "Hook for functions attaching to \\`C-c C-c', if the table is sent.
 This can be used to add additional functionality after the table is sent
 to the receiver position, otherwise, if table is not sent, the functions
 are not run.")
@@ -887,7 +892,10 @@ nil      When nil, the command tries to be smart and figure out the
          separator in the following way:
          - when each line contains a TAB, assume TAB-separated material
          - when each line contains a comma, assume CSV material
-         - else, assume one or more SPACE characters as separator."
+         - else, assume one or more SPACE characters as separator.
+`babel-auto'
+       Use the same rules as nil, but do not try any separator when
+       the region contains a single line and has no commas or tabs."
   (interactive "r\nP")
   (let* ((beg (min beg0 end0))
 	 (end (max beg0 end0))
@@ -904,12 +912,15 @@ nil      When nil, the command tries to be smart and figure out the
     (if (bolp) (backward-char 1) (end-of-line 1))
     (setq end (point-marker))
     ;; Get the right field separator
-    (unless separator
+    (when (or (not separator) (eq separator 'babel-auto))
       (goto-char beg)
       (setq separator
 	    (cond
-	     ((not (re-search-forward "^[^\n\t]+$" end t)) '(16))
-	     ((not (re-search-forward "^[^\n,]+$" end t)) '(4))
+	     ((not (save-excursion (re-search-forward "^[^\n\t]+$" end t))) '(16))
+	     ((not (save-excursion (re-search-forward "^[^\n,]+$" end t))) '(4))
+             ((and (eq separator 'babel-auto)
+                   (= 1 (count-lines beg end)))
+              (rx unmatchable))
 	     (t 1))))
     (goto-char beg)
     (if (equal separator '(4))
@@ -2657,11 +2668,16 @@ location of point."
 		       form
 		     (calc-eval (cons form calc-modes)
 				(when (and (not keep-empty) numbers) 'num)))
-		ev (if duration (org-table-time-seconds-to-string
-				 (if (string-match "^[0-9]+:[0-9]+\\(?::[0-9]+\\)?$" ev)
-				     (string-to-number (org-table-time-string-to-seconds ev))
-				   (string-to-number ev))
-				 duration-output-format)
+		ev (if (and duration
+                            ;; When the result is an empty string,
+                            ;; keep it empty.
+                            ;; See https://list.orgmode.org/orgmode/CAF_DUeEFpNU5UXjE80yB1MB9xj5oVLqG=XadnkqCdzWtakWdPg@mail.gmail.com/
+                            (not (string-empty-p ev)))
+                       (org-table-time-seconds-to-string
+			(if (string-match "^[0-9]+:[0-9]+\\(?::[0-9]+\\)?$" ev)
+			    (string-to-number (org-table-time-string-to-seconds ev))
+			  (string-to-number ev))
+			duration-output-format)
 		     ev)))
 
 	(when org-table-formula-debug
@@ -2871,15 +2887,15 @@ list, `literal' is for the format specifier L."
       (if lispp
 	  (if (eq lispp 'literal)
 	      elements
-	    (if (and (eq elements "") (not keep-empty))
-                ;; FIXME: This branch of `if' is never used because
-                ;; strings are never `eq' here.  But changing to
-                ;; `equal' breaks tests.
-                ;; See
-                ;; https://list.orgmode.org/orgmode/20230827214320.46754-1-salutis@me.com/
-		""
-	      (prin1-to-string
-	       (if numbers (string-to-number elements) elements))))
+            ;; Ignore KEEP-EMPTY here.
+            ;; When ELEMENTS="" and NUMBERS=t, (string-to-number "")
+            ;; returns 0 - consistent with (0) for Calc branch.
+            ;; When ELEMENTS="" and NUMBERS=nil, `prin1-to-string' will
+            ;; return "\"\"" - historical behavior that also does not
+            ;; leave missing arguments in formulas like (string< $1 $2)
+            ;; when $2 cell is empty.
+            (prin1-to-string
+	     (if numbers (string-to-number elements) elements)))
 	(if (string-match "\\S-" elements)
 	    (progn
 	      (when numbers (setq elements (number-to-string
@@ -3369,7 +3385,10 @@ Parameters get priority."
 	  (titles '((column . "# Column Formulas\n")
 		    (field . "# Field and Range Formulas\n")
 		    (named . "# Named Field Formulas\n"))))
-      (switch-to-buffer-other-window "*Edit Formulas*")
+      (let ((pop-up-frames nil))
+        ;; We explicitly prohibit creating edit buffer in a new frame
+        ;; - such configuration is not supported.
+        (switch-to-buffer-other-window "*Edit Formulas*"))
       (erase-buffer)
       ;; Keep global-font-lock-mode from turning on font-lock-mode
       (let ((font-lock-global-modes '(not fundamental-mode)))
@@ -3690,7 +3709,9 @@ With prefix ARG, apply the new formulas to the table."
     (org-table-store-formulas eql)
     (set-marker pos nil)
     (set-marker source nil)
-    (kill-buffer "*Edit Formulas*")
+    (when-let ((window (get-buffer-window "*Edit Formulas*" t)))
+      (quit-window 'kill window))
+    (when (get-buffer "*Edit Formulas*") (kill-buffer "*Edit Formulas*"))
     (if arg
 	(org-table-recalculate 'all)
       (message "New formulas installed - press C-u C-c C-c to apply."))))
@@ -3914,7 +3935,7 @@ When non-nil, return the overlay narrowing the field."
     ;; Aligning table from the first row will not shrink again the
     ;; second row, which was not visible initially.
     ;;
-    ;; However, fixing it requires to check every row, which may be
+    ;; However, fixing it requires checking every row, which may be
     ;; slow on large tables.  Moreover, the hindrance of this
     ;; pathological case is very limited.
     (forward-line 0)
@@ -4616,8 +4637,8 @@ function is being called interactively."
 	     (predicate
 	      (cl-case sorting-type
 		((?n ?N ?t ?T) #'<)
-		((?a ?A) (if with-case #'string-collate-lessp
-			   (lambda (s1 s2) (string-collate-lessp s1 s2 nil t))))
+		((?a ?A) (if with-case #'org-string<
+			   (lambda (s1 s2) (org-string< s1 s2 nil t))))
 		((?f ?F)
 		 (or compare-func
 		     (and interactive?
@@ -5204,7 +5225,7 @@ When LOCAL is non-nil, show references for the table at point."
     ;; accident in Org mode.
     (message "Orgtbl mode is not useful in Org mode, command ignored"))
    (orgtbl-mode
-    (and (orgtbl-setup) (defun orgtbl-setup () nil)) ;; FIXME: Yuck!?!
+    (orgtbl-setup)
     ;; Make sure we are first in minor-mode-map-alist
     (let ((c (assq 'orgtbl-mode minor-mode-map-alist)))
       ;; FIXME: maybe it should use emulation-mode-map-alists?
@@ -5259,92 +5280,91 @@ to execute outside of tables."
   (interactive)
   (user-error "This key has no function outside tables"))
 
+;; Fill in orgtbl keymap.
+(let ((nfunc 0)
+      (bindings
+       '(([(meta shift left)]  org-table-delete-column)
+	 ([(meta left)]	 org-table-move-column-left)
+	 ([(meta right)]       org-table-move-column-right)
+	 ([(meta shift right)] org-table-insert-column)
+	 ([(meta shift up)]    org-table-kill-row)
+	 ([(meta shift down)]  org-table-insert-row)
+	 ([(meta up)]		 org-table-move-row-up)
+	 ([(meta down)]	 org-table-move-row-down)
+	 ("\C-c\C-w"		 org-table-cut-region)
+	 ("\C-c\M-w"		 org-table-copy-region)
+	 ("\C-c\C-y"		 org-table-paste-rectangle)
+	 ("\C-c\C-w"           org-table-wrap-region)
+	 ("\C-c-"		 org-table-insert-hline)
+	 ("\C-c}"		 org-table-toggle-coordinate-overlays)
+	 ("\C-c{"		 org-table-toggle-formula-debugger)
+	 ("\C-m"		 org-table-next-row)
+	 ([(shift return)]	 org-table-copy-down)
+	 ("\C-c?"		 org-table-field-info)
+	 ("\C-c "		 org-table-blank-field)
+	 ("\C-c+"		 org-table-sum)
+	 ("\C-c="		 org-table-eval-formula)
+	 ("\C-c'"		 org-table-edit-formulas)
+	 ("\C-c`"		 org-table-edit-field)
+	 ("\C-c*"		 org-table-recalculate)
+	 ("\C-c^"		 org-table-sort-lines)
+	 ("\M-a"		 org-table-beginning-of-field)
+	 ("\M-e"		 org-table-end-of-field)
+	 ([(control ?#)]       org-table-rotate-recalc-marks)))
+      elt key fun cmd)
+  (while (setq elt (pop bindings))
+    (setq nfunc (1+ nfunc))
+    (setq key (org-key (car elt))
+	  fun (nth 1 elt)
+	  cmd (orgtbl-make-binding fun nfunc key))
+    (org-defkey orgtbl-mode-map key cmd))
+
+  ;; Special treatment needed for TAB, RET and DEL
+  (org-defkey orgtbl-mode-map [(return)]
+	      (orgtbl-make-binding 'orgtbl-ret 100 [(return)] "\C-m"))
+  (org-defkey orgtbl-mode-map "\C-m"
+	      (orgtbl-make-binding 'orgtbl-ret 101 "\C-m" [(return)]))
+  (org-defkey orgtbl-mode-map [(tab)]
+	      (orgtbl-make-binding 'orgtbl-tab 102 [(tab)] "\C-i"))
+  (org-defkey orgtbl-mode-map "\C-i"
+	      (orgtbl-make-binding 'orgtbl-tab 103 "\C-i" [(tab)]))
+  (org-defkey orgtbl-mode-map [(shift tab)]
+	      (orgtbl-make-binding 'org-table-previous-field 104
+				   [(shift tab)] [(tab)] "\C-i"))
+  (org-defkey orgtbl-mode-map [backspace]
+	      (orgtbl-make-binding 'org-delete-backward-char 109
+				   [backspace] (kbd "DEL")))
+
+  (org-defkey orgtbl-mode-map [S-iso-lefttab]
+	      (orgtbl-make-binding 'org-table-previous-field 107
+				   [S-iso-lefttab] [backtab] [(shift tab)]
+				   [(tab)] "\C-i"))
+
+  (org-defkey orgtbl-mode-map [backtab]
+	      (orgtbl-make-binding 'org-table-previous-field 108
+				   [backtab] [S-iso-lefttab] [(shift tab)]
+				   [(tab)] "\C-i"))
+
+  (org-defkey orgtbl-mode-map "\M-\C-m"
+	      (orgtbl-make-binding 'org-table-wrap-region 105
+				   "\M-\C-m" [(meta return)]))
+  (org-defkey orgtbl-mode-map [(meta return)]
+	      (orgtbl-make-binding 'org-table-wrap-region 106
+				   [(meta return)] "\M-\C-m"))
+
+  (org-defkey orgtbl-mode-map "\C-c\C-c" 'orgtbl-ctrl-c-ctrl-c)
+  (org-defkey orgtbl-mode-map "\C-c|" 'orgtbl-create-or-convert-from-region))
+
 (defun orgtbl-setup ()
   "Setup orgtbl keymaps."
-  (let ((nfunc 0)
-	(bindings
-	 '(([(meta shift left)]  org-table-delete-column)
-	   ([(meta left)]	 org-table-move-column-left)
-	   ([(meta right)]       org-table-move-column-right)
-	   ([(meta shift right)] org-table-insert-column)
-	   ([(meta shift up)]    org-table-kill-row)
-	   ([(meta shift down)]  org-table-insert-row)
-	   ([(meta up)]		 org-table-move-row-up)
-	   ([(meta down)]	 org-table-move-row-down)
-	   ("\C-c\C-w"		 org-table-cut-region)
-	   ("\C-c\M-w"		 org-table-copy-region)
-	   ("\C-c\C-y"		 org-table-paste-rectangle)
-	   ("\C-c\C-w"           org-table-wrap-region)
-	   ("\C-c-"		 org-table-insert-hline)
-	   ("\C-c}"		 org-table-toggle-coordinate-overlays)
-	   ("\C-c{"		 org-table-toggle-formula-debugger)
-	   ("\C-m"		 org-table-next-row)
-	   ([(shift return)]	 org-table-copy-down)
-	   ("\C-c?"		 org-table-field-info)
-	   ("\C-c "		 org-table-blank-field)
-	   ("\C-c+"		 org-table-sum)
-	   ("\C-c="		 org-table-eval-formula)
-	   ("\C-c'"		 org-table-edit-formulas)
-	   ("\C-c`"		 org-table-edit-field)
-	   ("\C-c*"		 org-table-recalculate)
-	   ("\C-c^"		 org-table-sort-lines)
-	   ("\M-a"		 org-table-beginning-of-field)
-	   ("\M-e"		 org-table-end-of-field)
-	   ([(control ?#)]       org-table-rotate-recalc-marks)))
-	elt key fun cmd)
-    (while (setq elt (pop bindings))
-      (setq nfunc (1+ nfunc))
-      (setq key (org-key (car elt))
-	    fun (nth 1 elt)
-	    cmd (orgtbl-make-binding fun nfunc key))
-      (org-defkey orgtbl-mode-map key cmd))
-
-    ;; Special treatment needed for TAB, RET and DEL
-    (org-defkey orgtbl-mode-map [(return)]
-		(orgtbl-make-binding 'orgtbl-ret 100 [(return)] "\C-m"))
-    (org-defkey orgtbl-mode-map "\C-m"
-		(orgtbl-make-binding 'orgtbl-ret 101 "\C-m" [(return)]))
-    (org-defkey orgtbl-mode-map [(tab)]
-		(orgtbl-make-binding 'orgtbl-tab 102 [(tab)] "\C-i"))
-    (org-defkey orgtbl-mode-map "\C-i"
-		(orgtbl-make-binding 'orgtbl-tab 103 "\C-i" [(tab)]))
-    (org-defkey orgtbl-mode-map [(shift tab)]
-		(orgtbl-make-binding 'org-table-previous-field 104
-				     [(shift tab)] [(tab)] "\C-i"))
-    (org-defkey orgtbl-mode-map [backspace]
-		(orgtbl-make-binding 'org-delete-backward-char 109
-				     [backspace] (kbd "DEL")))
-
-    (org-defkey orgtbl-mode-map [S-iso-lefttab]
-		(orgtbl-make-binding 'org-table-previous-field 107
-				     [S-iso-lefttab] [backtab] [(shift tab)]
-				     [(tab)] "\C-i"))
-
-    (org-defkey orgtbl-mode-map [backtab]
-		(orgtbl-make-binding 'org-table-previous-field 108
-				     [backtab] [S-iso-lefttab] [(shift tab)]
-				     [(tab)] "\C-i"))
-
-    (org-defkey orgtbl-mode-map "\M-\C-m"
-		(orgtbl-make-binding 'org-table-wrap-region 105
-				     "\M-\C-m" [(meta return)]))
-    (org-defkey orgtbl-mode-map [(meta return)]
-		(orgtbl-make-binding 'org-table-wrap-region 106
-				     [(meta return)] "\M-\C-m"))
-
-    (org-defkey orgtbl-mode-map "\C-c\C-c" 'orgtbl-ctrl-c-ctrl-c)
-    (org-defkey orgtbl-mode-map "\C-c|" 'orgtbl-create-or-convert-from-region)
-
-    (when orgtbl-optimized
-      ;; If the user wants maximum table support, we need to hijack
-      ;; some standard editing functions
-      (org-remap orgtbl-mode-map
-		 'self-insert-command 'orgtbl-self-insert-command
-		 'delete-char 'org-delete-char
-                 'delete-forward-char 'org-delete-char
-		 'delete-backward-char 'org-delete-backward-char)
-      (org-defkey orgtbl-mode-map "|" 'org-force-self-insert))
-    t))
+  ;; If the user wants maximum table support, we need to hijack
+  ;; some standard editing functions
+  (org-remap orgtbl-mode-map
+	     'self-insert-command (and orgtbl-optimized 'orgtbl-self-insert-command)
+	     'delete-char (and orgtbl-optimized 'org-delete-char)
+             'delete-forward-char (and orgtbl-optimized 'org-delete-char)
+	     'delete-backward-char (and orgtbl-optimized 'org-delete-backward-char))
+  (org-defkey orgtbl-mode-map "|" (and orgtbl-optimized 'org-force-self-insert)))
 
 (defun orgtbl-ctrl-c-ctrl-c (arg)
   "If the cursor is inside a table, realign the table.
@@ -5403,7 +5423,7 @@ conflicting binding to this key outside `orgtbl-mode'."
     (org-table-next-row)))
 
 (defun orgtbl-self-insert-command (N)
-  "Like `self-insert-command', use overwrite-mode for whitespace in tables.
+  "Like `self-insert-command', use `overwrite-mode' for whitespace in tables.
 If the cursor is in a table looking at whitespace, the whitespace is
 overwritten, and the table is not marked as requiring realignment."
   (interactive "p")
@@ -5457,14 +5477,16 @@ a radio table."
     (goto-char (org-table-begin))
     (let (rtn)
       (forward-line -1)
-      (while (looking-at "[ \t]*#\\+ORGTBL[: \t][ \t]*SEND[ \t]+\\([^ \t\r\n]+\\)[ \t]+\\([^ \t\r\n]+\\)\\([ \t]+.*\\)?")
-	(let ((name (org-no-properties (match-string 1)))
-	      (transform (intern (match-string 2)))
-	      (params (if (match-end 3)
-			  (read (concat "(" (match-string 3) ")")))))
-	  (push (list :name name :transform transform :params params)
-		rtn)
-	  (forward-line -1)))
+      (catch :bob
+        (while (looking-at "[ \t]*#\\+ORGTBL[: \t][ \t]*SEND[ \t]+\\([^ \t\r\n]+\\)[ \t]+\\([^ \t\r\n]+\\)\\([ \t]+.*\\)?")
+	  (let ((name (org-no-properties (match-string 1)))
+	        (transform (intern (match-string 2)))
+	        (params (if (match-end 3)
+			    (read (concat "(" (match-string 3) ")")))))
+	    (push (list :name name :transform transform :params params)
+		  rtn)
+            (when (bobp) (throw :bob nil))
+	    (forward-line -1))))
       rtn)))
 
 (defun orgtbl-send-replace-tbl (name text)
@@ -6134,7 +6156,7 @@ supported.  It is also possible to use the following one:
 
 ;;;###autoload
 (defun orgtbl-to-orgtbl (table params)
-  "Convert the `orgtbl-mode' TABLE into another orgtbl-mode table.
+  "Convert the `orgtbl-mode' TABLE into another `orgtbl-mode' table.
 
 TABLE is a list, each entry either the symbol `hline' for
 a horizontal separator line, or a list of fields for that line.
@@ -6158,9 +6180,13 @@ supported."
   (with-temp-buffer
     (insert (orgtbl-to-orgtbl table params))
     (org-table-align)
-    (replace-regexp-in-string
-     "-|" "-+"
-     (replace-regexp-in-string "|-" "+-" (buffer-substring 1 (buffer-size))))))
+    (goto-char (point-min))
+    (while (search-forward "-|" nil t)
+      (replace-match "-+"))
+    (goto-char (point-min))
+    (while (search-forward "|-" nil t)
+      (replace-match "+-"))
+    (buffer-string)))
 
 (defun orgtbl-to-unicode (table params)
   "Convert the `orgtbl-mode' TABLE into a table with unicode characters.

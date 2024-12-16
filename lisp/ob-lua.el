@@ -23,12 +23,14 @@
 
 ;;; Commentary:
 
-;; Org-Babel support for evaluating lua source code.
+;; Org-Babel support for evaluating Lua source code.
 
 ;; Requirements:
 ;; for session support, lua-mode is needed.
+;;
 ;; lua-mode is not part of GNU Emacs/orgmode, but can be obtained
-;; from marmalade or melpa.
+;; from NonGNU ELPA (see `M-x list-packages').
+;;
 ;; The source repository is here:
 ;; https://github.com/immerrr/lua-mode
 
@@ -68,18 +70,24 @@ This will typically be `lua-mode'."
   :type 'symbol)
 
 (defcustom org-babel-lua-hline-to "None"
-  "Replace hlines in incoming tables with this when translating to lua."
+  "Replace hlines in incoming tables with this when translating to Lua."
   :group 'org-babel
   :version "26.1"
   :package-version '(Org . "8.3")
   :type 'string)
 
 (defcustom org-babel-lua-None-to 'hline
-  "Replace `None' in lua tables with this before returning."
+  "Replace `None' in Lua tables with this before returning."
   :group 'org-babel
   :version "26.1"
   :package-version '(Org . "8.3")
   :type 'symbol)
+
+(defcustom org-babel-lua-multiple-values-separator ", "
+  "Separate multiple values with this string."
+  :group 'org-babel
+  :package-version '(Org . "9.7")
+  :type 'string)
 
 (defun org-babel-execute:lua (body params)
   "Execute Lua BODY according to PARAMS.
@@ -139,8 +147,8 @@ The variable definitions are defining in PARAMS."
    (org-babel--get-vars params)))
 
 (defun org-babel-lua-var-to-lua (var)
-  "Convert an elisp value to a lua variable.
-Convert an elisp value, VAR, into a string of lua source code
+  "Convert an Emacs Lisp value to a Lua variable.
+Convert an Emacs Lisp value, VAR, into a string of Lua source code
 specifying a variable of the same value."
   (if (listp var)
       (if (and (= 1 (length var)) (not (listp (car var))))
@@ -201,7 +209,7 @@ Emacs-lisp table, otherwise return the results as a string."
 (defvar lua-which-bufname)
 (defvar lua-shell-buffer-name)
 (defun org-babel-lua-initiate-session-by-key (&optional session)
-  "Initiate a lua session.
+  "Initiate a Lua session.
 If there is not a current inferior-process-buffer in SESSION
 then create.  Return the initialized session."
   ;; (require org-babel-lua-mode)
@@ -251,41 +259,47 @@ function main()
 %s
 end
 
-fd=io.open(\"%s\", \"w\")
-fd:write( main() )
-fd:close()")
-(defvar org-babel-lua-pp-wrapper-method
-  "
--- table to string
-function t2s(t, indent)
+function dump(it, indent)
    if indent == nil then
-      indent = \"\"
+      indent = ''
    end
-   if type(t) == \"table\" then
-      ts = \"\"
-      for k,v in pairs(t) do
-         if type(v) == \"table\" then
-            ts = ts .. indent .. t2s(k,indent .. \"  \") .. \" = \\n\" ..
-               t2s(v, indent .. \"  \")
-         else
-            ts = ts .. indent .. t2s(k,indent .. \"  \") .. \" = \" ..
-               t2s(v, indent .. \"  \") .. \"\\n\"
+   if type(it) == 'table' and %s then
+      local count = 0
+      for _ in pairs(it) do
+         count = count + 1
+      end
+      local result = ''
+      if #indent ~= 0 then
+         result = result .. '\\n'
+      end
+      for key, value in pairs(it) do
+         result = result
+            .. indent
+            .. dump(key)
+            .. ' = '
+            .. dump(value, indent .. '  ')
+         count = count - 1
+         if count ~= 0 then
+            result = result .. '\\n'
          end
       end
-      return ts
+      return result
    else
-      return tostring(t)
+      return tostring(it)
    end
 end
 
-
-function main()
-%s
+function combine(...)
+  local result = {}
+  for index = 1, select('#', ...) do
+    result[index] = dump(select(index, ...))
+  end
+  return table.concat(result, '%s')
 end
 
-fd=io.open(\"%s\", \"w\")
-fd:write(t2s(main()))
-fd:close()")
+output = io.open('%s', 'w')
+output:write(combine(main()))
+output:close()")
 
 (defun org-babel-lua-evaluate
     (session body &optional result-type result-params preamble)
@@ -305,7 +319,7 @@ PREAMBLE is passed to `org-babel-lua-evaluate-external-process'."
   "Evaluate BODY in external Lua process.
 If RESULT-TYPE equals `output' then return standard output as a
 string.  If RESULT-TYPE equals `value' then return the value of the
-last statement in BODY, as elisp.
+last statement in BODY, as Emacs Lisp.
 RESULT-PARAMS list all the :result header arg parameters.
 PREAMBLE string is appended to BODY."
   (let ((raw
@@ -319,15 +333,17 @@ PREAMBLE string is appended to BODY."
 		      (concat
 		       preamble (and preamble "\n")
 		       (format
-			(if (member "pp" result-params)
-			    org-babel-lua-pp-wrapper-method
-			  org-babel-lua-wrapper-method)
+                        org-babel-lua-wrapper-method
 			(mapconcat
 			 (lambda (line) (format "\t%s" line))
 			 (split-string
 			  (org-remove-indentation
 			   (org-trim body))
-			  "[\r\n]") "\n")
+			  "[\r\n]")
+                         "\n")
+                        (if (member "pp" result-params)
+                            "true" "false")
+                        org-babel-lua-multiple-values-separator
 			(org-babel-process-file-name tmp-file 'noquote))))
 		     (org-babel-eval-read-file tmp-file))))))
     (org-babel-result-cond result-params
@@ -339,7 +355,7 @@ PREAMBLE string is appended to BODY."
   "Pass BODY to the Lua process in SESSION.
 If RESULT-TYPE equals `output' then return standard output as a
 string.  If RESULT-TYPE equals `value' then return the value of the
-last statement in BODY, as elisp."
+last statement in BODY, as Emacs Lisp."
   (let* ((send-wait (lambda () (comint-send-input nil t) (sleep-for 0.005)))
 	 (dump-last-value
 	  (lambda

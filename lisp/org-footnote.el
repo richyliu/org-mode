@@ -3,7 +3,7 @@
 ;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
 ;;
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
 ;; This file is part of GNU Emacs.
@@ -143,11 +143,12 @@ confirm    Like t, but let the user edit the created value.
            an anonymous footnote.
 random	   Automatically generate a unique, random label."
   :group 'org-footnote
+  :package-version '(Org . "9.7")
   :type '(choice
 	  (const :tag "Prompt for label" nil)
 	  (const :tag "Create automatic [fn:N]" t)
 	  (const :tag "Offer automatic [fn:N] for editing" confirm)
-	  (const :tag "Create anoymous [fn::]" anonymous)
+	  (const :tag "Create anonymous [fn::]" anonymous)
 	  (const :tag "Create a random label" random))
   :safe #'symbolp)
 

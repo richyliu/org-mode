@@ -4,7 +4,7 @@
 
 ;; Author: Nicolas Goaziou <n.goaziou at gmail dot com>
 ;; Maintainer: Ihor Radchenko <yantar92 at posteo dot net>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 
 ;; This file is part of GNU Emacs.
 
@@ -110,7 +110,7 @@
 ;; to current setup.
 
 (defconst org-element-archive-tag "ARCHIVE"
-  "Tag marking a substree as archived.")
+  "Tag marking a subtree as archived.")
 
 (defconst org-element-citation-key-re
   (rx "@" (group (one-or-more (any word "-.:?!`'/*@+|(){}<>&_^$#%~"))))
@@ -126,17 +126,24 @@ Key is located in match group 1.")
 Style, if any, is located in match group 1.")
 
 (defconst org-element-clock-line-re
-  (rx-to-string
-   `(seq
-     line-start (0+ (or ?\t ?\s))
-     "CLOCK: "
-     (regexp ,org-ts-regexp-inactive)
-     (opt "--"
-          (regexp ,org-ts-regexp-inactive)
-          (1+ (or ?\t ?\s)) "=>" (1+ (or ?\t ?\s))
-          (1+ digit) ":" digit digit)
-     (0+ (or ?\t ?\s))
-     line-end))
+  (let ((duration ; "=> 212:12"
+         '(seq
+           (1+ (or ?\t ?\s)) "=>" (1+ (or ?\t ?\s))
+           (1+ digit) ":" digit digit)))
+    (rx-to-string
+     `(seq
+       line-start (0+ (or ?\t ?\s))
+       "CLOCK:"
+       (or
+        (seq
+         (1+ (or ?\t ?\s))
+         (regexp ,org-ts-regexp-inactive)
+         (opt "--"
+              (regexp ,org-ts-regexp-inactive)
+              ,duration))
+        ,duration)
+       (0+ (or ?\t ?\s))
+       line-end)))
   "Regexp matching a clock line.")
 
 (defconst org-element-comment-string "COMMENT"
@@ -174,8 +181,7 @@ Drawer's name is located in match group 1.")
   (rx line-start (0+ (any ?\s ?\t))
       ":" (1+ (any ?- ?_ word)) ":"
       (0+ (any ?\s ?\t)) line-end)
-  "Regexp matching opening or closing line of a drawer.
-Drawer's name is located in match group 1.")
+  "Regexp matching opening or closing line of a drawer.")
 
 (defconst org-element-dynamic-block-open-re
   (rx line-start (0+ (any ?\s ?\t))
@@ -641,7 +647,7 @@ IMPORTANT: The buffer copy may also have variable `buffer-file-name'
 copied.
 
 To prevent Emacs overwriting the original buffer file,
-`write-contents-functions' is set to \='(always).  Do not alter this
+`write-contents-functions' is set to \\='(always).  Do not alter this
 variable and do not do anything that might alter it (like calling a
 major mode) to prevent data corruption.  Also, do note that Emacs may
 jump into the created buffer if the original file buffer is closed and
@@ -1181,7 +1187,7 @@ parse properties for property drawer at point."
                    (property-name-symbol (intern property-name))
                    (property-value
                     (org-element-deferred-create
-                     nil #'org-element--substring
+                     t #'org-element--substring
                      (- (match-beginning 3) begin)
                      (- (match-end 3) begin))))
               (cond
@@ -1348,7 +1354,7 @@ Throw `:org-element-deferred-retry' signal at the end."
 	     (title-end (point))
 	     (raw-value
               (org-element-deferred-create
-               nil #'org-element--headline-raw-value
+               t #'org-element--headline-raw-value
                (- title-start begin) (- title-end begin))))
         (org-element-put-property headline :raw-value raw-value)
         (org-element-put-property headline :level level)
@@ -1379,12 +1385,12 @@ Throw `:org-element-deferred-retry' signal at the end."
 
 (defconst org-element--headline-parse-title-raw
   (org-element-deferred-create
-   nil #'org-element--headline-parse-title t)
+   t #'org-element--headline-parse-title t)
   "Constant holding deferred value for raw headline `:title' property.")
 
 (defconst org-element--headline-parse-title-parse
   (org-element-deferred-create
-   nil #'org-element--headline-parse-title nil)
+   t #'org-element--headline-parse-title nil)
   "Constant holding deferred value for parsed headline `:title' property.")
 
 (defconst org-element--headline-deferred
@@ -2291,12 +2297,11 @@ Return a new syntax node of `clock' type containing `:status',
 `:value', `:time', `:begin', `:end', `:post-blank' and
 `:post-affiliated' as properties."
   (save-excursion
-    (let* ((case-fold-search nil)
-	   (begin (point))
-	   (value (progn (search-forward "CLOCK:" (line-end-position) t)
+    (let* ((begin (point))
+	   (value (progn (search-forward "CLOCK:" (line-end-position))
 			 (skip-chars-forward " \t")
 			 (org-element-timestamp-parser)))
-	   (duration (and (search-forward " => " (line-end-position) t)
+	   (duration (and (search-forward "=> " (line-end-position) t)
 			  (progn (skip-chars-forward " \t")
 				 (looking-at "\\(\\S-+\\)[ \t]*$"))
 			  (match-string-no-properties 1)))
@@ -2408,7 +2413,7 @@ Assume point is at comment block beginning."
 			     (if (eobp) (point) (line-beginning-position))))
 		 (value
                   (org-element-deferred-create
-                   nil #'org-element--substring
+                   t #'org-element--substring
                    (- contents-begin begin)
                    (- contents-end begin))))
 	    (org-element-create
@@ -2526,7 +2531,7 @@ Return a new syntax node of `example-block' type containing `:begin',
 		 (contents-begin (line-beginning-position 2))
 		 (value
                   (org-element-deferred-create
-                   nil #'org-element--unescape-substring
+                   t #'org-element--unescape-substring
                    (- contents-begin begin)
                    (- contents-end begin)))
 		 (pos-before-blank (progn (goto-char contents-end)
@@ -2606,7 +2611,7 @@ Assume point is at export-block beginning."
 			   (if (eobp) (point) (line-beginning-position))))
 	       (value
                 (org-element-deferred-create
-                 nil #'org-element--unescape-substring
+                 t #'org-element--unescape-substring
                  (- contents-begin begin)
                  (- contents-end begin))))
 	  (org-element-create
@@ -2794,7 +2799,7 @@ Assume point is at the beginning of the latex environment."
 	       (begin (car affiliated))
 	       (value
                 (org-element-deferred-create
-                 nil #'org-element--substring
+                 t #'org-element--substring
                  (- code-begin begin)
                  (- code-end begin)))
 	       (end (progn (skip-chars-forward " \r\t\n" limit)
@@ -3053,7 +3058,7 @@ Assume point is at the beginning of the block."
 		 ;; Retrieve code.
 		 (value
                   (org-element-deferred-create
-                   nil #'org-element--unescape-substring
+                   t #'org-element--unescape-substring
                    (- (line-beginning-position 2) begin)
                    (- contents-end begin)))
 		 (pos-before-blank (progn (goto-char contents-end)
@@ -3153,7 +3158,7 @@ Assume point is at the beginning of the table."
 	      :contents-end (and (eq type 'org) table-end)
 	      :value (and (eq type 'table.el)
                           (org-element-deferred-create
-                           nil #'org-element--substring
+                           t #'org-element--substring
                            (- table-begin begin)
                            (- table-end begin)))
 	      :post-blank (count-lines pos-before-blank end)
@@ -3268,7 +3273,7 @@ CONTENTS is verse block contents."
 ;; object types they can contain will be specified in
 ;; `org-element-object-restrictions'.
 ;;
-;; Creating a new type of object requires to alter
+;; Creating a new type of object requires altering
 ;; `org-element--object-regexp' and `org-element--object-lex', add the
 ;; new type in `org-element-all-objects', and possibly add
 ;; restrictions in `org-element-object-restrictions'.
@@ -3316,7 +3321,7 @@ Assume point is at first MARK."
                         (list :value
                               (and (memq type '(code verbatim))
                                    (org-element-deferred-create
-                                    nil #'org-element--substring
+                                    t #'org-element--substring
                                     (- contents-begin origin)
                                     (- contents-end origin))))
                       (list :contents-begin contents-begin
@@ -3566,7 +3571,7 @@ Assume point is at the beginning of the snippet."
 	     (value
               (when contents-end
                 (org-element-deferred-create
-                 nil #'org-element--substring
+                 t #'org-element--substring
                  (- contents-begin begin)
                  (- contents-end begin))))
 	     (post-blank (skip-chars-forward " \t"))
@@ -3661,7 +3666,7 @@ Assume point is at the beginning of the babel call."
 		       (replace-regexp-in-string "\n[ \t]*" " " (org-trim p)))))
 	       (value
                 (org-element-deferred-create
-                 nil #'org-element--substring
+                 t #'org-element--substring
                  0 (- (point) begin)))
 	       (post-blank (skip-chars-forward " \t"))
 	       (end (point)))
@@ -3795,7 +3800,7 @@ Assume point is at the beginning of the LaTeX fragment."
          'latex-fragment
 	 (list :value
                (org-element-deferred-create
-                nil #'org-element--substring
+                t #'org-element--substring
                 0 (- after-fragment begin))
 	       :begin begin
 	       :end end
@@ -3868,7 +3873,7 @@ Assume point is at the beginning of the link."
 	;;
 	;; Also treat any newline character and associated
 	;; indentation as a single space character.  This is not
-	;; compatible with RFC 3986, which requires to ignore
+        ;; compatible with RFC 3986, which requires ignoring
 	;; them altogether.  However, doing so would require
 	;; users to encode spaces on the fly when writing links
 	;; (e.g., insert [[shell:ls%20*.org]] instead of
@@ -4276,7 +4281,7 @@ Assume point is at the target."
 	  "\\|"
 	  "\\(?:<[0-9]+-[0-9]+-[0-9]+[^>\n]+?\\+[0-9]+[dwmy]>\\)"
 	  "\\|"
-	  "\\(?:<%%\\(?:([^>\n]+)\\)>\\)")
+	  "\\(?:<%%\\(?:([^>\n]+)\\)\\([^\n>]*\\)>\\)")
   "Regexp matching any timestamp type object.")
 
 (defconst org-element--timestamp-raw-value-regexp
@@ -4289,12 +4294,13 @@ Assume point is at the target."
   "Parse time stamp at point, if any.
 
 When at a time stamp, return a new syntax node of `timestamp' type
-containing `:type', `:range-type', `:raw-value', `:year-start', `:month-start',
-`:day-start', `:hour-start', `:minute-start', `:year-end',
-`:month-end', `:day-end', `:hour-end', `:minute-end',
+containing `:type', `:range-type', `:raw-value', `:year-start',
+`:month-start', `:day-start', `:hour-start', `:minute-start',
+`:year-end', `:month-end', `:day-end', `:hour-end', `:minute-end',
 `:repeater-type', `:repeater-value', `:repeater-unit',
-`:warning-type', `:warning-value', `:warning-unit', `:begin', `:end'
-and `:post-blank' properties.  Otherwise, return nil.
+`:repeater-deadline-value', `:repeater-deadline-unit', `:warning-type',
+`:warning-value', `:warning-unit', `:diary-sexp', `:begin', `:end' and
+`:post-blank' properties.  Otherwise, return nil.
 
 Assume point is at the beginning of the timestamp."
   (when (looking-at-p org-element--timestamp-regexp)
@@ -4305,19 +4311,29 @@ Assume point is at the beginning of the timestamp."
 	      (progn
 		(looking-at org-element--timestamp-raw-value-regexp)
 		(match-string-no-properties 0)))
-	     (date-start (match-string-no-properties 1))
-	     (date-end (match-string-no-properties 3))
 	     (diaryp (match-beginning 2))
+             diary-sexp
+	     (date-start (if diaryp
+                             ;; Only consider part after sexp for
+                             ;; diary timestamps.
+                             (save-match-data
+                               (looking-at org-element--timestamp-regexp)
+                               (setq diary-sexp
+                                     (buffer-substring-no-properties
+                                      (+ 3 (match-beginning 0))
+                                      (match-beginning 2)))
+                               (match-string 2))
+                           (match-string-no-properties 1)))
+	     (date-end (match-string-no-properties 3))
 	     (post-blank (progn (goto-char (match-end 0))
 				(skip-chars-forward " \t")))
 	     (end (point))
 	     (time-range
-	      (and (not diaryp)
-		   (string-match
-		    "[012]?[0-9]:[0-5][0-9]\\(-\\([012]?[0-9]\\):\\([0-5][0-9]\\)\\)"
-		    date-start)
-		   (cons (string-to-number (match-string 2 date-start))
-			 (string-to-number (match-string 3 date-start)))))
+	      (when (string-match
+		     "[012]?[0-9]:[0-5][0-9]\\(-\\([012]?[0-9]\\):\\([0-5][0-9]\\)\\)"
+		     date-start)
+	        (cons (string-to-number (match-string 2 date-start))
+		      (string-to-number (match-string 3 date-start)))))
 	     (type (cond (diaryp 'diary)
 			 ((and activep (or date-end time-range)) 'active-range)
 			 (activep 'active)
@@ -4327,20 +4343,38 @@ Assume point is at the beginning of the timestamp."
                           (date-end 'daterange)
                           (time-range 'timerange)
                           (t nil)))
-	     (repeater-props
-	      (and (not diaryp)
-		   (string-match "\\([.+]?\\+\\)\\([0-9]+\\)\\([hdwmy]\\)"
-				 raw-value)
-		   (list
-		    :repeater-type
-		    (let ((type (match-string 1 raw-value)))
-		      (cond ((equal "++" type) 'catch-up)
-			    ((equal ".+" type) 'restart)
-			    (t 'cumulate)))
-		    :repeater-value (string-to-number (match-string 2 raw-value))
-		    :repeater-unit
-		    (pcase (string-to-char (match-string 3 raw-value))
-		      (?h 'hour) (?d 'day) (?w 'week) (?m 'month) (_ 'year)))))
+             (repeater-props
+              (and (not diaryp)
+                   (string-match
+                    (rx
+                     (group-n 1 (or "+" "++" ".+"))
+                     (group-n 2 (+ digit))
+                     (group-n 3 (any "hdwmy"))
+                     (optional
+                      "/"
+                      (group-n 4 (+ digit))
+                      (group-n 5 (any "hdwmy"))))
+                    raw-value)
+                   (nconc
+                    (list
+                     :repeater-type
+                     (let ((type (match-string 1 raw-value)))
+                       (cond ((equal "++" type) 'catch-up)
+                             ((equal ".+" type) 'restart)
+                             (t 'cumulate)))
+                     :repeater-value (string-to-number (match-string 2 raw-value))
+                     :repeater-unit
+                     (pcase (string-to-char (match-string 3 raw-value))
+                       (?h 'hour) (?d 'day) (?w 'week) (?m 'month) (_ 'year)))
+
+                    (let ((repeater-deadline-value (match-string 4 raw-value))
+                          (repeater-deadline-unit (match-string 5 raw-value)))
+                      (when (and repeater-deadline-value repeater-deadline-unit)
+                        (list
+                         :repeater-deadline-value (string-to-number repeater-deadline-value)
+                         :repeater-deadline-unit
+                         (pcase (string-to-char repeater-deadline-unit)
+                           (?h 'hour) (?d 'day) (?w 'week) (?m 'month) (_ 'year))))))))
 	     (warning-props
 	      (and (not diaryp)
 		   (string-match "\\(-\\)?-\\([0-9]+\\)\\([hdwmy]\\)" raw-value)
@@ -4370,6 +4404,17 @@ Assume point is at the beginning of the timestamp."
 		  day-end (or (nth 3 date) day-start)
 		  hour-end (or (nth 2 date) (car time-range) hour-start)
 		  minute-end (or (nth 1 date) (cdr time-range) minute-start))))
+        ;; Diary timestamp with time.
+        (when (and diaryp
+                   (string-match "\\([012]?[0-9]\\):\\([0-5][0-9]\\)\\(-\\([012]?[0-9]\\):\\([0-5][0-9]\\)\\)?" date-start))
+          (setq hour-start (match-string 1 date-start)
+                minute-start (match-string 2 date-start)
+                hour-end (match-string 4 date-start)
+                minute-end (match-string 5 date-start))
+          (when hour-start (setq hour-start (string-to-number hour-start)))
+          (when minute-start (setq minute-start (string-to-number minute-start)))
+          (when hour-end (setq hour-end (string-to-number hour-end)))
+          (when minute-end (setq minute-end (string-to-number minute-end))))
 	(org-element-create
          'timestamp
 	 (nconc (list :type type
@@ -4388,128 +4433,144 @@ Assume point is at the beginning of the timestamp."
 		      :begin begin
 		      :end end
 		      :post-blank post-blank)
+                (and diary-sexp (list :diary-sexp diary-sexp))
 		repeater-props
 		warning-props))))))
 
 (defun org-element-timestamp-interpreter (timestamp _)
   "Interpret TIMESTAMP object as Org syntax."
   (let((type (org-element-property :type timestamp)))
-    (if (member type '(active inactive inactive-range active-range))
-        (let ((day-start (org-element-property :day-start timestamp))
-              (month-start (org-element-property :month-start timestamp))
-              (year-start (org-element-property :year-start timestamp)))
-          ;; Return nil when start date is not available.  Could also
-          ;; throw an error, but the current behavior is historical.
-          (when (and day-start month-start year-start)
-            (let* ((repeat-string
-	            (concat
-	             (pcase (org-element-property :repeater-type timestamp)
-	               (`cumulate "+") (`catch-up "++") (`restart ".+"))
-	             (let ((val (org-element-property :repeater-value timestamp)))
-	               (and val (number-to-string val)))
-	             (pcase (org-element-property :repeater-unit timestamp)
-	               (`hour "h") (`day "d") (`week "w") (`month "m") (`year "y"))))
-                   (range-type (org-element-property :range-type timestamp))
-                   (warning-string
-	            (concat
-	             (pcase (org-element-property :warning-type timestamp)
-	               (`first "--") (`all "-"))
-	             (let ((val (org-element-property :warning-value timestamp)))
-	               (and val (number-to-string val)))
-	             (pcase (org-element-property :warning-unit timestamp)
-	               (`hour "h") (`day "d") (`week "w") (`month "m") (`year "y"))))
-                   (hour-start (org-element-property :hour-start timestamp))
-                   (minute-start (org-element-property :minute-start timestamp))
-                   (brackets
-                    (if (member
-                         type
-                         '(inactive inactive-range))
-                        (cons "[" "]")
-                      (cons "<" ">")))
-                   (timestamp-end
-                    (concat
-                     (and (org-string-nw-p repeat-string) (concat " " repeat-string))
-                     (and (org-string-nw-p warning-string) (concat " " warning-string))
-                     (cdr brackets))))
-              (concat
-               ;; Opening backet: [ or <
-               (car brackets)
-               ;; Starting date/time: YYYY-MM-DD DAY[ HH:MM]
-               (format-time-string
-                ;; `org-time-stamp-formats'.
-	        (org-time-stamp-format
-                 ;; Ignore time unless both HH:MM are available.
-                 ;; Ignore means (car org-timestamp-formats).
-                 (and minute-start hour-start)
-                 'no-brackets)
-	        (org-encode-time
-	         0 (or minute-start 0) (or hour-start 0)
-	         day-start month-start year-start))
-               ;; Range: -HH:MM or TIMESTAMP-END--[YYYY-MM-DD DAY HH:MM]
-               (let ((hour-end (org-element-property :hour-end timestamp))
-                     (minute-end (org-element-property :minute-end timestamp)))
-                 (pcase type
-                   ((or `active `inactive)
-                    ;; `org-element-timestamp-parser' uses this type
-                    ;; when no time/date range is provided.  So,
-                    ;; should normally return nil in this clause.
-                    (pcase range-type
-                      (`nil
-                       ;; `org-element-timestamp-parser' assigns end
-                       ;; times for `active'/`inactive' TYPE if start
-                       ;; time is not nil.  But manually built
-                       ;; timestamps may not contain end times, so
-                       ;; check for end times anyway.
-                       (when (and hour-start hour-end minute-start minute-end
-				  (or (/= hour-start hour-end)
-				      (/= minute-start minute-end)))
-                         ;; Could also throw an error.  Return range
-                         ;; timestamp nevertheless to preserve
-                         ;; historical behavior.
-                         (format "-%02d:%02d" hour-end minute-end)))
-                      ((or `timerange `daterange)
-                       (error "`:range-type' must be `nil' for `active'/`inactive' type"))))
-                   ;; Range must be present.
-                   ((or `active-range `inactive-range)
-                    (pcase range-type
-                      ;; End time: -HH:MM.
-                      ;; Fall back to start time if end time is not defined (arbitrary historical choice).
-                      ;; Error will be thrown if both end and begin time is not defined.
-                      (`timerange (format "-%02d:%02d" (or hour-end hour-start) (or minute-end minute-start)))
-                      ;; End date: TIMESTAMP-END--[YYYY-MM-DD DAY HH:MM
-                      ((or `daterange
-                           ;; Should never happen in the output of `org-element-timestamp-parser'.
-                           ;; Treat as an equivalent of `daterange' arbitrarily.
-                           `nil)
-                       (concat
-                        ;; repeater + warning + closing > or ]
-                        ;; This info is duplicated in date ranges.
-                        timestamp-end
-                        "--" (car brackets)
-                        (format-time-string
-                         ;; `org-time-stamp-formats'.
-	                 (org-time-stamp-format
-                          ;; Ignore time unless both HH:MM are available.
-                          ;; Ignore means (car org-timestamp-formats).
-                          (and minute-end hour-end)
-                          'no-brackets)
-	                 (org-encode-time
-                          ;; Closing HH:MM missing is a valid scenario.
-	                  0 (or minute-end 0) (or hour-end 0)
-                          ;; YEAR/MONTH/DAY-END will always be present
-                          ;; for `daterange' range-type, as parsed by
-                          ;; `org-element-timestamp-parser'.
-                          ;; For manually constructed timestamp
-                          ;; object, arbitrarily fall back to starting
-                          ;; date.
-	                  (or (org-element-property :day-end timestamp) day-start)
-	                  (or (org-element-property :month-end timestamp) month-start)
-	                  (or (org-element-property :year-end timestamp) year-start)))))))))
-               ;; repeater + warning + closing > or ]
-               ;; This info is duplicated in date ranges.
-               timestamp-end))))
-      ;; diary type.
-      (org-element-property :raw-value timestamp))))
+    (let ((day-start (org-element-property :day-start timestamp))
+          (month-start (org-element-property :month-start timestamp))
+          (year-start (org-element-property :year-start timestamp)))
+      ;; Return nil when start date is not available.  Could also
+      ;; throw an error, but the current behavior is historical.
+      (when (or (and day-start month-start year-start)
+                (eq type 'diary))
+        (let* ((repeat-string
+	        (concat
+	         (pcase (org-element-property :repeater-type timestamp)
+	           (`cumulate "+") (`catch-up "++") (`restart ".+"))
+	         (let ((val (org-element-property :repeater-value timestamp)))
+	           (and val (number-to-string val)))
+	         (pcase (org-element-property :repeater-unit timestamp)
+	           (`hour "h") (`day "d") (`week "w") (`month "m") (`year "y"))
+                 (when-let ((repeater-deadline-value
+                             (org-element-property :repeater-deadline-value timestamp))
+                            (repeater-deadline-unit
+                             (org-element-property :repeater-deadline-unit timestamp)))
+                   (concat
+                    "/"
+                    (number-to-string repeater-deadline-value)
+                    (pcase repeater-deadline-unit
+                      (`hour "h") (`day "d") (`week "w") (`month "m") (`year "y"))))))
+               (range-type (org-element-property :range-type timestamp))
+               (warning-string
+	        (concat
+	         (pcase (org-element-property :warning-type timestamp)
+	           (`first "--") (`all "-"))
+	         (let ((val (org-element-property :warning-value timestamp)))
+	           (and val (number-to-string val)))
+	         (pcase (org-element-property :warning-unit timestamp)
+	           (`hour "h") (`day "d") (`week "w") (`month "m") (`year "y"))))
+               (hour-start (org-element-property :hour-start timestamp))
+               (minute-start (org-element-property :minute-start timestamp))
+               (brackets
+                (if (member
+                     type
+                     '(inactive inactive-range))
+                    (cons "[" "]")
+                  ;; diary as well
+                  (cons "<" ">")))
+               (timestamp-end
+                (concat
+                 (and (org-string-nw-p repeat-string) (concat " " repeat-string))
+                 (and (org-string-nw-p warning-string) (concat " " warning-string))
+                 (cdr brackets))))
+          (concat
+           ;; Opening bracket: [ or <
+           (car brackets)
+           ;; Starting date/time: YYYY-MM-DD DAY[ HH:MM]
+           (if (eq type 'diary)
+               (concat
+                "%%"
+                (org-element-property :diary-sexp timestamp)
+                (when (and minute-start hour-start)
+                  (format " %02d:%02d" hour-start minute-start)))
+             (format-time-string
+              ;; `org-time-stamp-formats'.
+	      (org-time-stamp-format
+               ;; Ignore time unless both HH:MM are available.
+               ;; Ignore means (car org-timestamp-formats).
+               (and minute-start hour-start)
+               'no-brackets)
+	      (org-encode-time
+	       0 (or minute-start 0) (or hour-start 0)
+	       day-start month-start year-start)))
+           ;; Range: -HH:MM or TIMESTAMP-END--[YYYY-MM-DD DAY HH:MM]
+           (let ((hour-end (org-element-property :hour-end timestamp))
+                 (minute-end (org-element-property :minute-end timestamp)))
+             (pcase type
+               ((or `active `inactive)
+                ;; `org-element-timestamp-parser' uses this type
+                ;; when no time/date range is provided.  So,
+                ;; should normally return nil in this clause.
+                (pcase range-type
+                  (`nil
+                   ;; `org-element-timestamp-parser' assigns end
+                   ;; times for `active'/`inactive' TYPE if start
+                   ;; time is not nil.  But manually built
+                   ;; timestamps may not contain end times, so
+                   ;; check for end times anyway.
+                   (when (and hour-start hour-end minute-start minute-end
+			      (or (/= hour-start hour-end)
+				  (/= minute-start minute-end)))
+                     ;; Could also throw an error.  Return range
+                     ;; timestamp nevertheless to preserve
+                     ;; historical behavior.
+                     (format "-%02d:%02d" hour-end minute-end)))
+                  ((or `timerange `daterange)
+                   (error "`:range-type' must be `nil' for `active'/`inactive' type"))))
+               ;; Range must be present.
+               ((or `active-range `inactive-range
+                    (and `diary (guard (eq 'timerange range-type))))
+                (pcase range-type
+                  ;; End time: -HH:MM.
+                  ;; Fall back to start time if end time is not defined (arbitrary historical choice).
+                  ;; Error will be thrown if both end and begin time is not defined.
+                  (`timerange (format "-%02d:%02d" (or hour-end hour-start) (or minute-end minute-start)))
+                  ;; End date: TIMESTAMP-END--[YYYY-MM-DD DAY HH:MM
+                  ((or `daterange
+                       ;; Should never happen in the output of `org-element-timestamp-parser'.
+                       ;; Treat as an equivalent of `daterange' arbitrarily.
+                       `nil)
+                   (concat
+                    ;; repeater + warning + closing > or ]
+                    ;; This info is duplicated in date ranges.
+                    timestamp-end
+                    "--" (car brackets)
+                    (format-time-string
+                     ;; `org-time-stamp-formats'.
+	             (org-time-stamp-format
+                      ;; Ignore time unless both HH:MM are available.
+                      ;; Ignore means (car org-timestamp-formats).
+                      (and minute-end hour-end)
+                      'no-brackets)
+	             (org-encode-time
+                      ;; Closing HH:MM missing is a valid scenario.
+	              0 (or minute-end 0) (or hour-end 0)
+                      ;; YEAR/MONTH/DAY-END will always be present
+                      ;; for `daterange' range-type, as parsed by
+                      ;; `org-element-timestamp-parser'.
+                      ;; For manually constructed timestamp
+                      ;; object, arbitrarily fall back to starting
+                      ;; date.
+	              (or (org-element-property :day-end timestamp) day-start)
+	              (or (org-element-property :month-end timestamp) month-start)
+	              (or (org-element-property :year-end timestamp) year-start)))))))))
+           ;; repeater + warning + closing > or ]
+           ;; This info is duplicated in date ranges.
+           timestamp-end))))))
 ;;;; Underline
 
 (defun org-element-underline-parser ()
@@ -4617,7 +4678,7 @@ element it has to parse."
        ;;
        ;; In general, the checks below should be as efficient as
        ;; possible, especially early in the `cond' form.  (The
-       ;; early checks will contribute to al subsequent parsers as
+       ;; early checks will contribute to all subsequent parsers as
        ;; well).
        (cond
 	;; Item.
@@ -4761,8 +4822,6 @@ element it has to parse."
 			  (looking-at-p rule-regexp)))))))
 	       (org-element-table-parser limit affiliated))
 	      ;; List.
-              ;; FIXME: Instead of generating regexps, we should
-              ;; better use a constant.
 	      ((looking-at-p (org-item-re))
 	       (org-element-plain-list-parser
 		limit affiliated
@@ -5259,10 +5318,10 @@ to an appropriate container (e.g., a paragraph)."
 		       (pcase (char-after)
 		         (?^ (and (memq 'superscript restriction)
 			          (org-element-superscript-parser)))
-		         (?_ (or (and (memq 'subscript restriction)
-				      (org-element-subscript-parser))
-			         (and (memq 'underline restriction)
-				      (org-element-underline-parser))))
+		         (?_ (or (and (memq 'underline restriction)
+				      (org-element-underline-parser))
+			         (and (memq 'subscript restriction)
+				      (org-element-subscript-parser))))
 		         (?* (and (memq 'bold restriction)
 			          (org-element-bold-parser)))
 		         (?/ (and (memq 'italic restriction)
@@ -5896,7 +5955,7 @@ better to remove the commands advised in such a way from this list.")
 
 (defmacro org-element--cache-log-message (format-string &rest args)
   "Add a new log message for org-element-cache.
-FORMAT-STRING and ARGS are the same arguments as in `foramt'."
+FORMAT-STRING and ARGS are the same arguments as in `format'."
   `(when (or org-element--cache-diagnostics
              (eq org-element--cache-self-verify 'backtrace))
      (let* ((format-string (concat (format "org-element-cache diagnostics(%s): "
@@ -6087,11 +6146,8 @@ This function assumes `org-element--headline-cache' is a valid AVL tree."
 
 ;;;; Tools
 
-;; FIXME: Ideally, this should be inlined to avoid overheads, but
-;; inlined functions should be declared before the code that uses them
-;; and some code above does use `org-element--cache-active-p'.  Moving this
-;; declaration on top would require restructuring the whole cache
-;; section.
+;; FIXME: `org-fold-core-cycle-over-indirect-buffers' should better be
+;; taken out of org-fold-core to track indirect buffers in general.
 (defun org-element--cache-active-p (&optional called-from-cache-change-func-p)
   "Non-nil when cache is active in current buffer.
 When CALLED-FROM-CACHE-CHANGE-FUNC-P is non-nil, do not assert cache
@@ -6169,7 +6225,7 @@ the cache."
                ;; children starting at the same pos.
                (not (org-element-type-p hashed '(section org-data table))))
           hashed
-        ;; No appriate HASHED.  Search the cache.
+        ;; No appropriate HASHED.  Search the cache.
         (while node
           (let* ((element (avl-tree--node-data node))
 	         (begin (org-element-begin element)))
@@ -7166,7 +7222,7 @@ that range.  See `after-change-functions' for more information."
     (when (org-element--cache-active-p t)
       (when (not (eq org-element--cache-change-tic (buffer-chars-modified-tick)))
         (org-element--cache-log-message "After change")
-        (setq org-element--cache-change-warning (org-element--cache-before-change beg end))
+        (org-element--cache-before-change beg end)
         ;; If beg is right after spaces in front of an element, we
         ;; risk affecting previous element, so move beg to bol, making
         ;; sure that we capture preceding element.
@@ -7190,6 +7246,11 @@ that range.  See `after-change-functions' for more information."
     (when (buffer-base-buffer)
       (setq-local org-element--cache nil)
       (setq-local org-element--headline-cache nil))
+    ;; Register current buffer in `org-fold-core--indirect-buffers' to
+    ;; be used within `org-fold-core-cycle-over-indirect-buffers'.
+    ;; FIXME: We should eventually factor out indirect buffer tracking
+    ;; from org-fold-core.
+    (org-fold-core-decouple-indirect-buffer-folds)
     (add-hook 'before-change-functions
 	      #'org-element--cache-before-change nil t)
     ;; Run `org-element--cache-after-change' early to handle cases
@@ -7920,7 +7981,7 @@ the cache."
     (unless (memq granularity '( headline headline+inlinetask
                                  greater-element element))
       (error "Unsupported granularity: %S" granularity))
-    ;; Make TO-POS marker.  Otherwise, buffer edits may garble the the
+    ;; Make TO-POS marker.  Otherwise, buffer edits may garble the
     ;; process.
     (unless (markerp to-pos)
       (let ((mk (make-marker)))
@@ -8258,8 +8319,11 @@ the cache."
                               ;; Reached LIMIT-COUNT.  Abort.
                               (when (and limit-count
                                          (>= count-predicate-calls-match
-                                             limit-count))
-                                (cache-walk-abort)))
+                                            limit-count))
+                                (cache-walk-abort))
+                              ;; Make sure that we have a cached
+                              ;; element at the new START.
+                              (when start (element-match-at-point)))
                             ;; Check if the buffer or cache has been modified.
                             (unless (org-with-base-buffer nil
                                       (and (eq modified-tic org-element--cache-change-tic)

@@ -5,7 +5,7 @@
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;;      Nicolas Goaziou <mail@nicolasgoaziou.fr>
 ;; Maintainer: Jack Kamm <jackkamm@gmail.com>
-;; Keywords: outlines, hypermedia, calendar, wp
+;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 
 ;; This file is part of GNU Emacs.
@@ -932,14 +932,14 @@ Return VTODO component as a string."
                                               :repeater-unit dl)))))
               ;; TODO Implement via RDATE with changing DURATION
               (org-display-warning "Not yet implemented: \
-different repeaters on SCHEDULED and DEADLINE. Skipping.")
+different repeaters on SCHEDULED and DEADLINE.  Skipping.")
               nil)
              ;; DEADLINE has repeater but SCHEDULED doesn't
              ((and dl-repeat-p (and sc (not sc-repeat-p)))
               ;; TODO SCHEDULED should only apply to first instance;
               ;; use RDATE with custom DURATION to implement that
               (org-display-warning "Not yet implemented: \
-repeater on DEADLINE but not SCHEDULED. Skipping.")
+repeater on DEADLINE but not SCHEDULED.  Skipping.")
               nil)
              ((or sc-repeat-p dl-repeat-p)
               (concat
@@ -1142,7 +1142,13 @@ external process."
 	    (catch 'nextfile
 	      (org-check-agenda-file file)
 	      (with-current-buffer (org-get-agenda-file-buffer file)
-		(org-icalendar-export-to-ics))))
+		(condition-case err
+                    (org-icalendar-export-to-ics)
+                  (error
+                   (warn "Exporting %s to icalendar failed: %s"
+                         file
+                         (error-message-string err))
+                   (signal (car err) (cdr err)))))))
 	(org-release-buffers org-agenda-new-buffers)))))
 
 ;;;###autoload
