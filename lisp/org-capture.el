@@ -1,6 +1,6 @@
 ;;; org-capture.el --- Fast note taking in Org       -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2010-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2025 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, text
@@ -454,11 +454,14 @@ you can escape ambiguous cases with a backward slash, e.g., \\%i."
 				  (function :tag "  Function"))
 			    (list :tag "Current clocking task"
 				  (const :format "" clock))
+                            (list :tag "The position at point"
+				  (const :format "" here))
 			    (list :tag "Function"
 				  (const :format "" function)
 				  (function :tag "  Function")))
 		    (choice :tag "Template       "
 			    (string)
+                            (const :tag "Empty" nil)
 			    (list :tag "File"
 				  (const :format "" file)
 				  (file :tag "Template file"))
@@ -658,7 +661,7 @@ When called with a `C-0' (zero) prefix, insert a template at point.
 When called with a `C-1' (one) prefix, force prompting for a date when
 a datetree entry is made.
 
-ELisp programs can set KEYS to a string associated with a template
+Elisp programs can set KEYS to a string associated with a template
 in `org-capture-templates'.  In this case, interactive selection
 will be bypassed.
 

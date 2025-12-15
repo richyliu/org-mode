@@ -1,6 +1,6 @@
 ;;; org-refile.el --- Refile Org Subtrees             -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2010-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2025 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, text
@@ -104,7 +104,7 @@ are used, equivalent to the value `((nil . (:level . 1)))'."
 	   (choice :value org-agenda-files
 		   (const :tag "All agenda files" org-agenda-files)
 		   (const :tag "Current buffer" nil)
-		   (function) (variable) (file))
+		   (function) (variable) (file) (repeat (file)))
 	   (choice :tag "Identify target headline by"
 		   (cons :tag "Specific tag" (const :value :tag) (string))
 		   (cons :tag "TODO keyword" (const :value :todo) (string))

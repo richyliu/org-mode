@@ -1,6 +1,6 @@
 ;;; ox-texinfo.el --- Texinfo Backend for Org Export Engine -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2025 Free Software Foundation, Inc.
 ;; Author: Jonathan Leech-Pepin <jonathan.leechpepin at gmail dot com>
 ;; Keywords: outlines, hypermedia, calendar, text
 
@@ -826,9 +826,9 @@ holding export options."
               ;; `dn' is presumed to be just the DIRNAME part, so generate
               ;; either `* DIRNAME: (FILENAME).' or `* FILENAME.', whichever
               ;; is shortest.
-              ((and dn (not (equal dn file)))
+              (dn
                (format "* %s: (%s)." dn (or file dn)))
-              (t (format "* %s." file)))))
+              (t (format "* (%s)." file)))))
        (concat "@dircategory " dircat "\n"
 	       "@direntry\n"
 	       (let ((dirdesc
@@ -2037,9 +2037,11 @@ Once computed, the results remain cached."
   (unless (boundp 'org-texinfo-supports-math--cache)
     (setq org-texinfo-supports-math--cache
           (let ((math-example "1 + 1 = 2"))
-            (let* ((input-file (make-temp-file "test" nil ".info"))
+            (let* ((input-file (make-temp-file "test" nil ".texi"))
+                   (output-file
+                    (concat (file-name-sans-extension input-file) ".info"))
                    (input-content (string-join
-                                   (list (format "@setfilename %s" input-file)
+                                   (list (format "@setfilename %s" output-file)
                                          "@node Top"
                                          "@displaymath"
                                          math-example
@@ -2050,7 +2052,8 @@ Once computed, the results remain cached."
               (when-let* ((output-file
                            ;; If compilation fails, consider math to
                            ;; be not supported.
-                           (ignore-errors (org-texinfo-compile input-file)))
+                           (ignore-errors (let ((inhibit-message t))
+                                            (org-texinfo-compile input-file))))
                           (output-content (with-temp-buffer
                                             (insert-file-contents output-file)
                                             (buffer-string))))

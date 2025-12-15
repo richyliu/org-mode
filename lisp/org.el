@@ -1,15 +1,15 @@
 ;;; org.el --- Outline-based notes management and organizer -*- lexical-binding: t; -*-
 
 ;; Carstens outline-mode for keeping track of everything.
-;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2025 Free Software Foundation, Inc.
 ;;
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
-;; Maintainer: Bastien Guerry <bzg@gnu.org>
+;; Maintainer: Ihor Radchenko <yantar92@posteo.net>
 ;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;; Package-Requires: ((emacs "26.1"))
 
-;; Version: 9.7.11
+;; Version: 9.7.39
 
 ;; This file is part of GNU Emacs.
 ;;
@@ -2949,10 +2949,13 @@ is better to limit inheritance to certain tags using the variables
 	  (const :tag "List them, indented with leading dots" indented)))
 
 (defcustom org-tags-sort-function nil
-  "When set, tags are sorted using this function as a comparator."
+  "When set, tags are sorted using this function as a comparator.
+When the value is nil, use default sorting order.  The default sorting
+is alphabetical, except in `org-set-tags' where no sorting is done by
+default."
   :group 'org-tags
   :type '(choice
-	  (const :tag "No sorting" nil)
+	  (const :tag "Default sorting" nil)
 	  (const :tag "Alphabetical" org-string<)
 	  (const :tag "Reverse alphabetical" org-string>)
 	  (function :tag "Custom function" nil)))
@@ -3157,16 +3160,16 @@ There are multiple ways to set the category.  One way is to set
 it in the document property drawer.  For example:
 
 :PROPERTIES:
-:CATEGORY: ELisp
+:CATEGORY: Elisp
 :END:
 
 Other ways to define it is as an Emacs file variable, for example
 
-#   -*- mode: org; org-category: \"ELisp\"
+#   -*- mode: org; org-category: \"Elisp\"
 
 or for the file to contain a special line:
 
-#+CATEGORY: ELisp
+#+CATEGORY: Elisp
 
 If the file does not specify a category, then file's base name
 is used instead.")
@@ -3770,7 +3773,11 @@ After a match, the match groups contain these elements:
 ;; https://orgmode.org/list/B72CDC2B-72F6-43A8-AC70-E6E6295766EC@gmail.com
 (defvar org-emphasis-regexp-components
   '("-[:space:]('\"{" "-[:space:].,:!?;'\")}\\[" "[:space:]" "." 1)
-  "Components used to build the regular expression for emphasis.
+  "Components used to build the regular expression for FONTIFYING emphasis.
+WARNING: This variable only affects visual fontification, but does not
+change Org markup.  For example, it does not affect how emphasis markup
+is interpreted on export.
+
 This is a list with five entries.  Terminology:  In an emphasis string
 like \" *strong word* \", we call the initial space PREMATCH, the final
 space POSTMATCH, the stars MARKERS, \"s\" and \"d\" are BORDER characters
@@ -4923,6 +4930,10 @@ This is for getting out of special buffers like capture.")
     st)
   "Syntax table including \"@\" and \"_\" as word constituents.")
 
+(defun org--set-tab-width (&rest _)
+  "Set `tab-width' to be 8."
+  (setq-local tab-width 8))
+
 ;;;###autoload
 (define-derived-mode org-mode outline-mode "Org"
   "Outline-based notes management and organizer, alias
@@ -4945,7 +4956,16 @@ The following commands are available:
   (setq-local org-mode-loading t)
   ;; Force tab width - indentation is significant in lists, so we need
   ;; to make sure that it is consistent across configurations.
-  (setq-local tab-width 8)
+  (org--set-tab-width)
+  ;; Really force it, even if dir-locals or file-locals set it - we
+  ;; need tab-width = 8 as a part of Org syntax.
+  (add-hook 'hack-local-variables-hook
+            #'org--set-tab-width 90 'local)
+  ;; In Emacs <30, editorconfig-mode uses advices, so we cannot rely
+  ;; upon `hack-local-variables-hook' to run after editorconfig
+  ;; tab-width settings are applied.
+  (add-hook 'editorconfig-after-apply-functions
+            #'org--set-tab-width 90 'local)
   (org-load-modules-maybe)
   (when org-agenda-file-menu-enabled
     (org-install-agenda-files-menu))
@@ -5489,14 +5509,14 @@ by a #."
 	    (org-remove-flyspell-overlays-in nl-before-endline end-of-endline)
             (cond
 	     ((and org-src-fontify-natively
-                   ;; Technically, according to
+                   ;; Technically, according to the
                    ;; `org-src-fontify-natively' docstring, we should
                    ;; only fontify src blocks.  However, it is common
-                   ;; to use undocumented fontification of example
-                   ;; blocks with undocumented language specifier.
-                   ;; Keep this undocumented feature for user
-                   ;; convenience.
-                   (member block-type '("src" "example")))
+                   ;; to use undocumented fontification of export and
+                   ;; example blocks. (The latter which do not support a
+                   ;; language specifier.) Keep this undocumented feature
+                   ;; for user convenience.
+                   (member block-type '("src" "export" "example")))
 	      (save-match-data
                 (org-src-font-lock-fontify-block (or lang "") block-start block-end))
 	      (add-text-properties bol-after-beginline block-end '(src-block t)))
@@ -8269,7 +8289,23 @@ See the docstring of `org-open-file' for details."
   (mouse-set-point ev)
   (when (eq major-mode 'org-agenda-mode)
     (org-agenda-copy-local-variable 'org-link-abbrev-alist-local))
-  (org-open-at-point))
+  ;; FIXME: This feature is actually unreliable - if we are in non-Org
+  ;; buffer and the link happens to be inside what Org parser
+  ;; recognizes as verbarim (for exampe, src block),
+  ;; `org-open-at-point' will do nothing.
+  ;; We might have used `org-open-at-point-global' instead, but it is
+  ;; not exactly the same. For example, it will have no way to open
+  ;; link abbreviations. So, suppressing parser complains about
+  ;; non-Org buffer to keep the feature working at least to the extent
+  ;; it did before.
+  (require 'warnings) ; Emacs <30
+  (defvar warning-suppress-types) ; warnings.el
+  (let ((warning-suppress-types
+         (cons '(org-element org-element-parser)
+               warning-suppress-types)))
+    ;; FIXME: Suppress warning in Emacs <30
+    ;; (ignore warning-suppress-types)
+    (org-open-at-point)))
 
 (defvar org-window-config-before-follow-link nil
   "The window configuration before following a link.
@@ -8588,7 +8624,7 @@ When point is a footnote definition, move to the first reference
 found.  If it is on a reference, move to the associated
 definition.
 
-When point is on a src-block of inline src-block, open its result.
+When point is on a src-block or inline src-block, open its result.
 
 When point is on a citation, follow it.
 
@@ -9102,6 +9138,8 @@ keywords relative to each registered export backend."
 	     (delq nil keywords))
       ;; Backend name (for keywords, like #+LATEX:)
       (push (upcase (symbol-name (org-export-backend-name backend))) keywords)
+      ;; Backend attributes, like #+ATTR_LATEX:
+      (push (format "ATTR_%s" (upcase (symbol-name (org-export-backend-name backend)))) keywords)
       (dolist (option-entry (org-export-backend-options backend))
 	;; Backend options.
 	(push (nth 1 option-entry) keywords)))))
@@ -9422,7 +9460,7 @@ With numeric prefix arg, switch to the Nth state.
 With a numeric prefix arg of 0, inhibit note taking for the change.
 With a numeric prefix arg of -1, cancel repeater to allow marking as DONE.
 
-When called through ELisp, arg is also interpreted in the following way:
+When called through Elisp, arg is also interpreted in the following way:
 `none'        -> empty state
 \"\"            -> switch to empty state
 `done'        -> switch to DONE
@@ -11411,6 +11449,7 @@ headlines matching this string."
 		 'todo-state todo
                  'ts-date ts-date
 		 'priority priority
+                 'urgency priority
                  'type (concat "tagsmatch" ts-date-type))
 	       (push txt rtn))
 	      ((functionp action)
@@ -12089,7 +12128,7 @@ which see."
       (`lambda (assoc string org-last-tags-completion-table)) ;exact match?
       (`(boundaries . ,suffix)
        (let ((end (if (string-match "[-+:&,|]" suffix)
-                      (match-string 0 suffix)
+                      (match-beginning 0)
                     (length suffix))))
          `(boundaries ,(or begin 0) . ,end)))
       (`nil
@@ -13221,8 +13260,8 @@ However, if LITERAL-NIL is set, return the string value \"nil\" instead."
     ;; Consider global properties, if we found no PROPERTY (or maybe
     ;; only PROPERTY+).
     (unless found-inherited?
-      (when-let ((global (org--property-global-or-keyword-value
-                          property t)))
+      (when-let* ((global (org--property-global-or-keyword-value
+                           property t)))
         (setq values (cons global values))))
     (when values
       (setq values (mapconcat
@@ -18035,7 +18074,7 @@ context.  See the individual commands for more information."
    (if (org-at-table-p) #'org-table-cut-region #'org-cut-subtree)))
 
 (defun org-paste-special (arg)
-  "Paste rectangular region into table, or past subtree relative to level.
+  "Paste rectangular region into table, or paste subtree relative to level.
 Calls `org-table-paste-rectangle' or `org-paste-subtree', depending on context.
 See the individual commands for more information."
   (interactive "P")
@@ -18529,17 +18568,22 @@ object (e.g., within a comment).  In these case, you need to use
      ;; if `org-return-follows-link' allows it.  Tolerate fuzzy
      ;; locations, e.g., in a comment, as `org-open-at-point'.
      ((and org-return-follows-link
-	   (or (and (eq 'link element-type)
-		    ;; Ensure point is not on the white spaces after
-		    ;; the link.
-		    (let ((origin (point)))
-		      (org-with-point-at (org-element-end context)
-			(skip-chars-backward " \t")
-			(> (point) origin))))
-	       (org-in-regexp org-ts-regexp-both nil t)
-	       (org-in-regexp org-tsr-regexp-both nil  t)
-               (org-element-lineage context '(citation citation-reference) 'include-self)
-	       (org-in-regexp org-link-any-re nil t)))
+	   (or
+            (let ((context
+                   (org-element-lineage
+                    context
+                    '(citation citation-reference link)
+                    'include-self)))
+              (and context
+                   ;; Ensure point is not on the white spaces after
+                   ;; the link.
+                   (let ((origin (point)))
+                     (org-with-point-at (org-element-end context)
+                       (skip-chars-backward " \t")
+                       (> (point) origin)))))
+            (org-in-regexp org-ts-regexp-both nil t)
+            (org-in-regexp org-tsr-regexp-both nil  t)
+            (org-in-regexp org-link-any-re nil t)))
       (call-interactively #'org-open-at-point))
      ;; Insert newline in heading, but preserve tags.
      ((and (not (bolp))
@@ -19229,7 +19273,8 @@ With prefix arg UNCOMPILED, load the uncompiled versions."
 	(when (or (> marker (point-max)) (< marker (point-min)))
 	  (widen))
 	(goto-char marker)
-	(org-fold-show-context 'org-goto))
+        (when (derived-mode-p 'org-mode)
+	  (org-fold-show-context 'org-goto)))
     (if bookmark
 	(bookmark-jump bookmark)
       (error "Cannot find location"))))
@@ -20052,7 +20097,7 @@ matches in paragraphs or comments, use it."
 		       (org-element-at-point)))
 	    (type (org-element-type element))
 	    (post-affiliated (org-element-post-affiliated element)))
-       (unless (< p post-affiliated)
+       (unless (or (not element) (< p post-affiliated))
 	 (cl-case type
 	   (comment
 	    (save-excursion
@@ -20559,11 +20604,15 @@ strictly within a source block, use appropriate comment syntax."
 		end)))
       ;; Translate region boundaries for the Org buffer to the source
       ;; buffer.
-      (let ((offset (- end beg)))
+      (let (src-end)
+        (save-excursion
+          (goto-char end)
+          (org-babel-do-in-edit-buffer
+           (setq src-end (point))))
 	(save-excursion
 	  (goto-char beg)
 	  (org-babel-do-in-edit-buffer
-	   (comment-or-uncomment-region (point) (+ offset (point))))))
+	   (comment-or-uncomment-region (point) src-end))))
     (save-restriction
       ;; Restrict region
       (narrow-to-region (save-excursion (goto-char beg)
@@ -21465,7 +21514,7 @@ Optional argument ELEMENT contains element at point."
 (defun org-at-block-p nil
   "Return t if cursor is at a block keyword."
   (save-excursion
-    (move-beginning-of-line 1)
+    (forward-line 0)
     (looking-at org-block-regexp)))
 
 (defun org-point-at-end-of-empty-headline ()
@@ -21653,10 +21702,10 @@ When TO-HEADING is non-nil, go to the next heading or `point-max'."
   "Skip planning line and properties drawer in current entry.
 
 When optional argument FULL is t, also skip planning information,
-clocking lines and any kind of drawer.
+clocking lines, any kind of drawer, and blank lines
 
 When FULL is non-nil but not t, skip planning information,
-properties, clocking lines and logbook drawers."
+properties, clocking lines, logbook drawers, and blank lines."
   (org-back-to-heading t)
   (forward-line)
   ;; Skip planning information.
@@ -21671,7 +21720,7 @@ properties, clocking lines and logbook drawers."
       (let ((end (save-excursion (outline-next-heading) (point)))
 	    (re (concat "[ \t]*$" "\\|" org-clock-line-re)))
 	(while (not (eobp))
-	  (cond ;; Skip clock lines.
+	  (cond ;; Skip clock lines and blank lines.
 	   ((looking-at-p re) (forward-line))
 	   ;; Skip logbook drawer.
 	   ((looking-at-p org-logbook-drawer-re)

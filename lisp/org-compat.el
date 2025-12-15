@@ -1,6 +1,6 @@
 ;;; org-compat.el --- Compatibility Code for Older Emacsen -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2025 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, text
@@ -115,10 +115,10 @@ This is an action function for buffer display, see Info
 node `(elisp) Buffer Display Action Functions'.  It should be
 called only by `display-buffer' or a function directly or
 indirectly called by the latter."
-    (when-let ((window (or (display-buffer-reuse-window buffer alist)
-                           (display-buffer-same-window buffer alist)
-                           (display-buffer-pop-up-window buffer alist)
-                           (display-buffer-use-some-window buffer alist))))
+    (when-let* ((window (or (display-buffer-reuse-window buffer alist)
+                            (display-buffer-same-window buffer alist)
+                            (display-buffer-pop-up-window buffer alist)
+                            (display-buffer-use-some-window buffer alist))))
       (delete-other-windows window)
       window)))
 
@@ -207,7 +207,7 @@ inserted before concatenating."
              (mapcar
               (lambda (str)
                 (when (and str (not (seq-empty-p str))
-                           (string-match "\\(.+\\)/?" str))
+                           (string-match "\\(.+?\\)/?$" str))
                   (match-string 1 str)))
               (cons directory components)))
        "/"))))
@@ -292,10 +292,16 @@ older than 27.1"
       (if tree (push tree elems))
       (nreverse elems))))
 
-(if (version< emacs-version "27.1")
+(with-no-warnings ; `replace-buffer-contents' is obsolete in Emacs 31
+  (cond
+   ((version< emacs-version "27.1")
     (defsubst org-replace-buffer-contents (source &optional _max-secs _max-costs)
-      (replace-buffer-contents source))
-  (defalias 'org-replace-buffer-contents #'replace-buffer-contents))
+      (replace-buffer-contents source)))
+   ((version< emacs-version "31")
+    (defalias 'org-replace-buffer-contents #'replace-buffer-contents))
+   (t
+    (defsubst org-replace-buffer-contents (source &optional max-secs max-costs)
+      (replace-region-contents (point-min) (point-max) source max-secs max-costs)))))
 
 (unless (fboundp 'proper-list-p)
   ;; `proper-list-p' was added in Emacs 27.1.  The function below is
@@ -1814,6 +1820,26 @@ key."
 (make-obsolete-variable 'org-speed-commands-user
                         "configure `org-speed-commands' instead." "9.5")
 (provide 'org-compat)
+
+;;;; yank-media
+;; Emacs 29's pgtk port has a bug where it might fail to return the
+;; right TARGET.  Install a workaround for Emacs <=29 since the fix
+;; went to Emacs 30.  See bug#72254.
+;; Org bug report link: https://list.orgmode.org/orgmode/87ed7kttoa.fsf@k-7.ch
+;; This should be removed once we drop Emacs 29 support.
+(when (and (fboundp 'pgtk-get-selection-internal)
+           (<= emacs-major-version 29))
+  ;; Only define the method if it hasn't been previously defined.
+  (unless (cl-find-method 'gui-backend-get-selection nil
+                          '((eql 'CLIPBOARD) (eql 'TARGETS)
+                            ((&context . window-system) eql 'pgtk)))
+    (cl-defmethod gui-backend-get-selection ((selection-symbol (eql 'CLIPBOARD))
+                                             (target-type (eql 'TARGETS))
+                                             &context (window-system pgtk))
+      (let ((sel (pgtk-get-selection-internal selection-symbol target-type)))
+        (if (vectorp sel)
+            sel
+          (vector sel))))))
 
 ;; Local variables:
 ;; generated-autoload-file: "org-loaddefs.el"

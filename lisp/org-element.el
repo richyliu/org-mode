@@ -1,6 +1,6 @@
 ;;; org-element.el --- Parser for Org Syntax         -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2025 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou at gmail dot com>
 ;; Maintainer: Ihor Radchenko <yantar92 at posteo dot net>
@@ -4455,10 +4455,10 @@ Assume point is at the beginning of the timestamp."
 	           (and val (number-to-string val)))
 	         (pcase (org-element-property :repeater-unit timestamp)
 	           (`hour "h") (`day "d") (`week "w") (`month "m") (`year "y"))
-                 (when-let ((repeater-deadline-value
-                             (org-element-property :repeater-deadline-value timestamp))
-                            (repeater-deadline-unit
-                             (org-element-property :repeater-deadline-unit timestamp)))
+                 (when-let* ((repeater-deadline-value
+                              (org-element-property :repeater-deadline-value timestamp))
+                             (repeater-deadline-unit
+                              (org-element-property :repeater-deadline-unit timestamp)))
                    (concat
                     "/"
                     (number-to-string repeater-deadline-value)
@@ -4937,9 +4937,12 @@ When PARSE is non-nil, values from keywords belonging to
 ;; parts of the parse tree.
 
 (defun org-element-parse-buffer (&optional granularity visible-only keep-deferred)
-  "Recursively parse the buffer and return structure.
+  "Recursively parse the current Org mode buffer and return structure.
 If narrowing is in effect, only parse the visible part of the
 buffer.
+
+This function assumes that current major mode is `org-mode'.  When the
+major mode is different, the behaviour is undefined.
 
 Optional argument GRANULARITY determines the depth of the
 recursion.  It can be set to the following symbols:
@@ -4979,9 +4982,7 @@ pattern (TYPE PROPERTIES CONTENTS), where :
 
 The Org buffer has `org-data' as type and nil as properties.
 `org-element-map' function can be used to find specific elements
-or objects within the parse tree.
-
-This function assumes that current major mode is `org-mode'."
+or objects within the parse tree."
   (save-excursion
     (goto-char (point-min))
     (let ((org-data (org-element-org-data-parser))
@@ -6012,7 +6013,7 @@ cache during the synchronization get a new key generated with
 Such keys are stored inside the element property
 `:org-element--cache-sync-key'.  The property is a cons containing
 current `org-element--cache-sync-keys-value' and the element key."
-  (or (when-let ((key-cons (org-element-property :org-element--cache-sync-key element)))
+  (or (when-let* ((key-cons (org-element-property :org-element--cache-sync-key element)))
         (when (eq org-element--cache-sync-keys-value (car key-cons))
           (cdr key-cons)))
       (let* ((begin (org-element-begin element))
@@ -7259,7 +7260,7 @@ that range.  See `after-change-functions' for more information."
 	      #'org-element--cache-after-change -1 t)))
 
 (defvar org-element--cache-avoid-synchronous-headline-re-parsing nil
-  "This variable controls how buffer changes are handled by the cache.
+  "How buffer changes are handled by the cache.
 
 By default (when this variable is nil), cache re-parses modified
 headlines immediately after modification preserving all the unaffected

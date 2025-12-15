@@ -1,6 +1,6 @@
 ;;; org-clock.el --- The time clocking code for Org mode -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2025 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, text
@@ -144,7 +144,7 @@ out time will be 14:50."
   :package-version '(Org . "8.0")
   :type '(choice
 	  (integer :tag "Minutes (0 for no rounding)")
-	  (symbol  :tag "Use `org-time-stamp-rounding-minutes'" 'same-as-time-stamp)))
+	  (const   :tag "Use `org-time-stamp-rounding-minutes'" same-as-time-stamp)))
 
 (defcustom org-clock-out-remove-zero-time-clocks nil
   "Non-nil means remove the clock line when the resulting time is zero."
@@ -698,7 +698,7 @@ there is no recent clock to choose from."
 	(fit-window-to-buffer nil nil (if (< chl 10) chl (+ 5 chl)))
 	(message (or prompt "Select task for clocking:"))
 	(unwind-protect (setq cursor-type nil rpl (read-char-exclusive))
-          (when-let ((window (get-buffer-window "*Clock Task Select*" t)))
+          (when-let* ((window (get-buffer-window "*Clock Task Select*" t)))
             (quit-window 'kill window))
 	  (when (get-buffer "*Clock Task Select*")
             (kill-buffer "*Clock Task Select*")))
@@ -1287,6 +1287,8 @@ This routine returns a floating point number."
     (org-mac-idle-seconds))
    ((and (eq window-system 'x) org-x11idle-exists-p)
     (org-x11-idle-seconds))
+   ((fboundp 'w32-system-idle-time)
+    (/ (w32-system-idle-time) 1000.0))
    ((and
      org-logind-dbus-session-path
      (dbus-get-property
@@ -3251,7 +3253,7 @@ The details of what will be saved are regulated by the variable
 		 org-clock-has-been-used
 		 (not (file-exists-p org-clock-persist-file))))
     (with-temp-file org-clock-persist-file
-      (insert (format ";; %s - %s at %s\n"
+      (insert (format ";; %s - %s at %s  -*- lexical-binding: t; -*-\n"
 		      (file-name-nondirectory org-clock-persist-file)
 		      (system-name)
 		      (format-time-string (org-time-stamp-format t))))

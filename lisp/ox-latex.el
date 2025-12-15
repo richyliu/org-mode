@@ -1,6 +1,6 @@
 ;;; ox-latex.el --- LaTeX Backend for Org Export Engine -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2011-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2011-2025 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <n.goaziou at gmail dot com>
 ;; Maintainer: Daniel Fleischer <danflscr@gmail.com>
@@ -588,6 +588,7 @@ like that: \"%%\".
 Setting :latex-title-command in publishing projects will take
 precedence over this variable."
   :group 'org-export-latex
+  :safe #'stringp
   :type '(string :tag "Format string"))
 
 (defcustom org-latex-subtitle-format "\\\\\\medskip\n\\large %s"
@@ -597,6 +598,7 @@ which is replaced with the subtitle."
   :group 'org-export-latex
   :version "26.1"
   :package-version '(Org . "8.3")
+  :safe #'stringp
   :type '(string :tag "Format string"))
 
 (defcustom org-latex-subtitle-separate nil
@@ -604,6 +606,7 @@ which is replaced with the subtitle."
   :group 'org-export-latex
   :version "26.1"
   :package-version '(Org . "8.3")
+  :safe #'booleanp
   :type 'boolean)
 
 (defcustom org-latex-toc-command "\\tableofcontents\n\n"
@@ -1522,7 +1525,7 @@ logfiles to remove, set `org-latex-logfiles-extensions'."
     ("Underfull \\hbox" . "[underfull hbox]")
     ("Overfull \\hbox" . "[overfull hbox]")
     ("Citation.*?undefined" . "[undefined citation]")
-    ("^!.+Unicode character" . "[unicode character(s) not set up for use with pdflatex. You can run lualatex or xelatex instead]")
+    ("^!.+Unicode character" . "[unicode character(s) not supported by pdflatex. Set org-latex-compiler to lualatex or xelatex instead]")
     ("Missing character: There is no" . "[Missing character(s): please load an appropriate font with the fontspec package]")
     ("Undefined control sequence" . "[undefined control sequence]"))
   "Alist of regular expressions and associated messages for the user.
@@ -4097,7 +4100,7 @@ a communication channel."
           (unless (hash-table-p table-head-cache)
             (setq table-head-cache (make-hash-table :test #'eq))
             (plist-put info :org-latex-table-head-cache table-head-cache))
-          (if-let ((head-contents (gethash (org-element-parent table-row) table-head-cache)))
+          (if-let* ((head-contents (gethash (org-element-parent table-row) table-head-cache)))
               (puthash (org-element-parent table-row) (concat head-contents "\\\\\n" contents)
                        table-head-cache)
             (puthash (org-element-parent table-row) contents table-head-cache))))
@@ -4282,11 +4285,16 @@ Export is done in a buffer named \"*Org LATEX Export*\", which
 will be displayed when `org-export-show-temporary-export-buffer'
 is non-nil."
   (interactive)
-  (org-export-to-buffer 'latex "*Org LATEX Export*"
-    async subtreep visible-only body-only ext-plist
-    (if (fboundp 'major-mode-remap)
-        (major-mode-remap 'latex-mode)
-      #'LaTeX-mode)))
+  (defvar TeX-parse-self) ;; defined in tex.el
+  (let (;; FIXME: Working around LaTeX-mode being broken in non-file buffers.
+        ;; To be removed once we drop Emacs 30 and earlier, where the problem
+        ;; is not yet fixed.
+        (TeX-parse-self nil))
+    (org-export-to-buffer 'latex "*Org LATEX Export*"
+      async subtreep visible-only body-only ext-plist
+      (if (fboundp 'major-mode-remap)
+          (major-mode-remap 'latex-mode)
+        #'LaTeX-mode))))
 
 ;;;###autoload
 (defun org-latex-convert-region-to-latex ()

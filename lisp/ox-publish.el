@@ -1,5 +1,5 @@
 ;;; ox-publish.el --- Publish Related Org Mode Files as a Website -*- lexical-binding: t; -*-
-;; Copyright (C) 2006-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2025 Free Software Foundation, Inc.
 
 ;; Author: David O'Toole <dto@gnu.org>
 ;; Keywords: hypermedia, outlines, text
@@ -826,7 +826,7 @@ Default for SITEMAP-FILENAME is `sitemap.org'."
 				      (mapcar #'file-name-directory files)))
 			files)))
 	 ;; Eventually sort all entries.
-	 (when (or sort-files (not (memq sort-folders 'ignore)))
+	 (when (or sort-files (not (eq sort-folders 'ignore)))
 	   (setq files (sort files sort-predicate)))
 	 (funcall sitemap-builder
 		  title
@@ -1231,6 +1231,7 @@ If FREE-CACHE, empty the cache."
       (error "Cannot find cache-file name in `org-publish-write-cache-file'"))
     (with-temp-file cache-file
       (let (print-level print-length)
+        (insert ";; -*- lexical-binding: nil; -*-\n")
 	(insert "(setq org-publish-cache \
 \(make-hash-table :test 'equal :weakness nil :size 100))\n")
 	(maphash (lambda (k v)

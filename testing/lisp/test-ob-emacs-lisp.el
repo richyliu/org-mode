@@ -1,6 +1,6 @@
 ;;; test-ob-emacs-lisp.el  -*- lexical-binding: t; -*-
 
-;; Copyright (c) 2012-2024 Free Software Foundation, Inc.
+;; Copyright (c) 2012-2025 Free Software Foundation, Inc.
 ;; Authors: Eric Schulte, Martyn Jago
 
 ;; This file is not part of GNU Emacs.
@@ -167,6 +167,18 @@ lexical-binding
 #+begin_src emacs-lisp :lexical '((x . 0)) :results verbatim
 lexical-binding
 #+end_src")))))
+
+(ert-deftest ob-emacs-lisp/results ()
+  "Test results formatting."
+  (org-test-with-temp-text-in-file
+      "
+#+begin_src emacs-lisp :lexical t :results value code
+(list 1 2 3)
+#+end_src"
+    (org-babel-next-src-block)
+    (org-babel-execute-src-block)
+    (search-forward "#+end_src")
+    (should (search-forward "(1 2 3)"))))
 
 (provide 'test-ob-emacs-lisp)
 

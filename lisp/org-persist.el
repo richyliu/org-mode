@@ -1,8 +1,9 @@
 ;;; org-persist.el --- Persist cached data across Emacs sessions         -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2021-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2021-2025 Free Software Foundation, Inc.
 
 ;; Author: Ihor Radchenko <yantar92 at posteo dot net>
+;; Maintainer: Ihor Radchenko <yantar92 at posteo dot net>
 ;; Keywords: cache, storage
 
 ;; This file is part of GNU Emacs.
@@ -478,11 +479,12 @@ FORMAT and ARGS are passed to `message'."
         (start-time (float-time)))
     (unless (file-exists-p (file-name-directory file))
       (make-directory (file-name-directory file) t))
-    ;; Force writing even when the file happens to be opened by
-    ;; another Emacs process.
+    ;; Discard cache when there is a clash with other Emacs process.
+    ;; This way, we make sure that cache is never mixing data & record
+    ;; from different processes.
     (cl-letf (((symbol-function #'ask-user-about-lock)
-               ;; FIXME: Emacs 27 does not yet have `always'.
-               (lambda (&rest _) t)))
+               (lambda (&rest _)
+                 (error "Other Emacs process is writing to cache"))))
       (with-temp-file file
         (insert ";;   -*- mode: lisp-data; -*-\n")
         (if pp
@@ -723,7 +725,7 @@ COLLECTION is the plist holding data collection."
 
 (defun org-persist-read:index (cont index-file _)
   "Read index container CONT from INDEX-FILE."
-  (when (file-exists-p index-file)
+  (when (and (file-exists-p index-file) (file-readable-p index-file))
     (let ((index (org-persist--read-elisp-file index-file)))
       (when index
         (catch :found
@@ -779,9 +781,10 @@ COLLECTION is the plist holding data collection."
       (when (file-exists-p org-persist-directory)
         (dolist (file (directory-files org-persist-directory 'absolute
                                        "\\`[^.][^.]"))
-          (if (file-directory-p file)
-              (delete-directory file t)
-            (delete-file file))))
+          (when (file-writable-p file)
+            (if (file-directory-p file)
+                (delete-directory file t)
+              (delete-file file)))))
       (plist-put (org-persist--get-collection container) :expiry 'never))))
 
 (defun org-persist--load-index ()
@@ -810,8 +813,8 @@ COLLECTION is the plist holding data collection."
   (let ((scope (nth 2 container)))
     (pcase scope
       ((pred stringp)
-       (when-let ((buf (or (get-buffer scope)
-                           (get-file-buffer scope))))
+       (when-let* ((buf (or (get-buffer scope)
+                            (get-file-buffer scope))))
          ;; FIXME: There is `buffer-local-boundp' introduced in Emacs 28.
          ;; Not using it yet to keep backward compatibility.
          (condition-case nil
@@ -821,8 +824,8 @@ COLLECTION is the plist holding data collection."
        (when (boundp (cadr container))
          (symbol-value (cadr container))))
       (`nil
-       (if-let ((buf (and (plist-get (plist-get collection :associated) :file)
-                          (get-file-buffer (plist-get (plist-get collection :associated) :file)))))
+       (if-let* ((buf (and (plist-get (plist-get collection :associated) :file)
+                           (get-file-buffer (plist-get (plist-get collection :associated) :file)))))
            ;; FIXME: There is `buffer-local-boundp' introduced in Emacs 28.
            ;; Not using it yet to keep backward compatibility.
            (condition-case nil
@@ -1006,10 +1009,6 @@ the CONTAINER as well."
                      (remove container (plist-get collection :container)))
           (org-persist--add-to-index collection))))))
 
-(defvar org-persist--write-cache (make-hash-table :test #'equal)
-  "Hash table storing as-written data objects.
-
-This data is used to avoid reading the data multiple times.")
 (cl-defun org-persist-read (container &optional associated hash-must-match load &key read-related)
   "Restore CONTAINER data for ASSOCIATED.
 When HASH-MUST-MATCH is non-nil, do not restore data if hash for
@@ -1057,8 +1056,7 @@ CONTAINER as well.  For example:
       (unless (seq-find (lambda (v)
                           (run-hook-with-args-until-success 'org-persist-before-read-hook v associated))
                         (plist-get collection :container))
-        (setq data (or (gethash persist-file org-persist--write-cache)
-                       (org-persist--read-elisp-file persist-file)))
+        (setq data (org-persist--read-elisp-file persist-file))
         (when data
           (cl-loop for c in (plist-get collection :container)
                    with result = nil
@@ -1129,7 +1127,6 @@ When IGNORE-RETURN is non-nil, just return t on success without calling
         (let ((file (org-file-name-concat org-persist-directory (plist-get collection :persist-file)))
               (data (mapcar (lambda (c) (cons c (org-persist-write:generic c collection)))
                             (plist-get collection :container))))
-          (puthash file data org-persist--write-cache)
           (org-persist--write-elisp-file file data)
           (or ignore-return (org-persist-read container associated)))))))
 
@@ -1232,7 +1229,7 @@ Remove expired sessions timestamps."
       (when (< (- (float-time (cdr record)) (float-time (current-time)))
                org-persist-gc-lock-expiry)
         (push record new-alist)))
-    (org-persist--write-elisp-file file new-alist)))
+    (ignore-errors (org-persist--write-elisp-file file new-alist))))
 
 (defun org-persist--gc-orphan-p ()
   "Return non-nil, when orphan files should be garbage-collected.
@@ -1240,7 +1237,7 @@ Remove current sessions from `org-persist-gc-lock-file'."
   (let* ((file (org-file-name-concat org-persist-directory org-persist-gc-lock-file))
          (alist (when (file-exists-p file) (org-persist--read-elisp-file file))))
     (setq alist (org-assoc-delete-all before-init-time alist))
-    (org-persist--write-elisp-file file alist)
+    (ignore-errors (org-persist--write-elisp-file file alist))
     ;; Only GC orphan files when there are no active sessions.
     (not alist)))
 

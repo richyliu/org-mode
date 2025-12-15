@@ -1,8 +1,9 @@
 ;;; org-macs.el --- Top-level Definitions for Org -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2025 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
+;; Maintainer: Ihor Radchenko <yantar92 at posteo dot net>
 ;; Keywords: outlines, hypermedia, calendar, text
 ;; URL: https://orgmode.org
 ;;
@@ -33,6 +34,7 @@
 
 (require 'cl-lib)
 (require 'format-spec)
+(eval-when-compile (require 'subr-x))  ; For `when-let*', Emacs < 29
 
 ;;; Org version verification.
 
@@ -573,7 +575,7 @@ is selected, only the bare key is returned."
 		   ((assoc current specials) (throw 'exit current))
 		   (t (error "No entry available")))))))
         (when buffer
-          (when-let ((window (get-buffer-window buffer t)))
+          (when-let* ((window (get-buffer-window buffer t)))
             (quit-window 'kill window))
           (kill-buffer buffer))))))
 
@@ -1162,6 +1164,7 @@ STRING width.  When REFERENCE-FACE is nil, `default' face is used."
       (org--string-width-1 string)
     ;; Wrap/line prefix will make `window-text-pixel-size' return too
     ;; large value including the prefix.
+    (setq string (copy-sequence string)) ; do not modify STRING object
     (remove-text-properties 0 (length string)
                             '(wrap-prefix t line-prefix t)
                             string)
@@ -1228,7 +1231,9 @@ This function forces `tab-width' value because it is used as a part of
 the parser, to ensure parser consistency when calculating list
 indentation."
   `(progn
-     (unless (= 8 tab-width) (error "Tab width in Org files must be 8, not %d.  Please adjust your `tab-width' settings for Org mode" tab-width))
+     (unless (= 8 tab-width)
+       (org--set-tab-width)
+       (warn "Tab width in Org files must be 8, not %d.  Setting back to 8.  Please adjust your `tab-width' settings for Org mode" tab-width))
      (string-width (buffer-substring-no-properties
                     (line-beginning-position) (point)))))
 

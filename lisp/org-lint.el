@@ -1,6 +1,6 @@
 ;;; org-lint.el --- Linting for Org documents        -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2015-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2015-2025 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <mail@nicolasgoaziou.fr>
 ;; Keywords: outlines, hypermedia, calendar, text
@@ -37,7 +37,7 @@
 
 ;; Checks currently implemented report the following:
 
-;; - duplicates CUSTOM_ID properties,
+;; - duplicate CUSTOM_ID properties,
 ;; - duplicate NAME values,
 ;; - duplicate targets,
 ;; - duplicate footnote definitions,
@@ -551,7 +551,7 @@ Use :header-args: instead"
 (defun org-lint-suspicious-language-in-src-block (ast)
   (org-element-map ast 'src-block
     (lambda (b)
-      (when-let ((lang (org-element-property :language b)))
+      (when-let* ((lang (org-element-property :language b)))
         (unless (or (functionp (intern (format "org-babel-execute:%s" lang)))
                     ;; No babel backend, but there is corresponding
                     ;; major mode.
@@ -718,6 +718,10 @@ Use :header-args: instead"
 	(pcase type
 	  ((or "attachment" "file")
 	   (let* ((path (org-element-property :path l))
+                  (path (if (and (equal type "attachment")
+                                 (string-match "::\\(.*\\)\\'" path))
+		            (substring path 0 (match-beginning 0))
+                          path))
 		  (file (if (string= type "file")
 			    path
                           (org-with-point-at (org-element-begin l)
@@ -859,9 +863,9 @@ Use \"export %s\" instead"
                                 (when (member prop common-options)
                                   "global ")
                                 prop
-                                (if-let ((backends
-                                          (and (not (member prop common-options))
-                                               (cdr (assoc-string prop options-alist)))))
+                                (if-let* ((backends
+                                           (and (not (member prop common-options))
+                                                (cdr (assoc-string prop options-alist)))))
                                     (format
                                      " in %S export %s"
                                      (if (= 1 (length backends)) (car backends) backends)
@@ -1553,7 +1557,7 @@ AST is the buffer parse tree."
   #'org-lint-misplaced-heading :trust 'low)
 
 (org-lint-add-checker 'duplicate-custom-id
-  "Report duplicates CUSTOM_ID properties"
+  "Report duplicate CUSTOM_ID properties"
   #'org-lint-duplicate-custom-id
   :categories '(link))
 

@@ -1,6 +1,6 @@
 ;;; ob-emacs-lisp.el --- Babel Functions for Emacs-lisp Code -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2025 Free Software Foundation, Inc.
 
 ;; Author: Eric Schulte
 ;; Keywords: literate programming, reproducible research
@@ -77,7 +77,7 @@ by `org-edit-src-code'.")
 		       (org-babel-expand-body:emacs-lisp body params)))
 	 (result (eval (read (if (or (member "code" result-params)
 				     (member "pp" result-params))
-				 (concat "(pp " body ")")
+				 (concat "(pp-to-string " body ")")
 			       body))
 		       (org-babel-emacs-lisp-lexical lexical))))
     (when (and session (not (equal session "none")))

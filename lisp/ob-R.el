@@ -1,6 +1,6 @@
 ;;; ob-R.el --- Babel Functions for R                -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2025 Free Software Foundation, Inc.
 
 ;; Author: Eric Schulte
 ;;	Dan Davison
@@ -288,7 +288,7 @@ Use PARAMS to set default directory when creating a new session."
   "Associate R code buffer with an R session.
 Make SESSION be the inferior ESS process associated with the
 current code buffer."
-  (when-let ((process (get-buffer-process session)))
+  (when-let* ((process (get-buffer-process session)))
     (setq ess-local-process-name (process-name process))
     (ess-make-buffer-current))
   (setq-local ess-gen-proc-buffer-name-function (lambda (_) session)))
@@ -486,7 +486,8 @@ by `org-babel-comint-async-filter'."
    session (current-buffer)
    "^\\(?:[>.+] \\)*\\[1\\] \"ob_comint_async_R_\\(start\\|end\\|file\\)_\\(.+\\)\"$"
    'org-babel-chomp
-   'ob-session-async-R-value-callback)
+   'ob-session-async-R-value-callback
+   'disable-prompt-filtering)
   (cl-case result-type
     (value
      (let ((tmp-file (org-babel-temp-file "R-")))

@@ -1,6 +1,6 @@
 ;;; ox.el --- Export Framework for Org Mode          -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2012-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2025 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Goaziou <mail@nicolasgoaziou.fr>
 ;; Maintainer: Ihor Radchenko <yantar92 at posteo dot net>
@@ -2672,7 +2672,7 @@ from tree."
 		(let ((type (org-element-type data)))
 		  (if (org-export--skip-p data info selected excluded)
 		      (if (memq type '(table-cell table-row)) (push data ignore)
-                        (if-let ((keep-spaces (org-export--keep-spaces data info)))
+                        (if-let* ((keep-spaces (org-export--keep-spaces data info)))
 			    ;; Keep spaces in place of removed
 			    ;; element, if necessary.
 			    ;; Example: "Foo.[10%] Bar" would become
@@ -3456,7 +3456,7 @@ file."
        (with-temp-buffer
          (let ((org-inhibit-startup t)
                (lines
-                (if-let ((location (plist-get parameters :location)))
+                (if-let* ((location (plist-get parameters :location)))
                     (org-export--inclusion-absolute-lines
                      file location
                      (plist-get parameters :only-contents)
@@ -6179,6 +6179,7 @@ them."
      ("tr" :default "Devamı sonraki sayfada"))
     ("Created"
      ("cs" :default "Vytvořeno")
+     ("de" :default "Erstellt am")
      ("et" :default "Loodud")
      ("fa" :default "ساخته شده")
      ("nl" :default "Gemaakt op")  ;; must be followed by a date or date+time
@@ -6267,25 +6268,25 @@ them."
     ("Figure %d:"
      ("ar" :default "شكل %d:")
      ("cs" :default "Obrázek %d:")
-     ("da" :default "Figur %d")
+     ("da" :default "Figur %d:")
      ("de" :default "Abbildung %d:")
      ("es" :default "Figura %d:")
      ("et" :default "Joonis %d:")
      ("fa" :default "شکل %d:")
-     ("fr" :default "Figure %d :" :html "Figure&nbsp;%d&nbsp;:")
-     ("is" :default "Mynd %d")
+     ("fr" :default "Figure %d:" :html "Figure&nbsp;%d&nbsp;:")
+     ("is" :default "Mynd %d:")
      ("it" :default "Figura %d:")
-     ("ja" :default "図%d: " :html "&#22259;%d: ")
+     ("ja" :default "図%d:" :html "&#22259;%d:")
      ("nl" :default "Figuur %d:" :html "Figuur&nbsp;%d:")
-     ("no" :default "Illustrasjon %d")
-     ("nb" :default "Illustrasjon %d")
-     ("nn" :default "Illustrasjon %d")
-     ("pl" :default "Obrazek %d") ; alternatively "Rysunek %d"
+     ("no" :default "Illustrasjon %d:")
+     ("nb" :default "Illustrasjon %d:")
+     ("nn" :default "Illustrasjon %d:")
+     ("pl" :default "Obrazek %d:") ; alternatively "Rysunek %d"
      ("pt_BR" :default "Figura %d:")
      ("ro" :default "Imaginea %d:")
      ("ru" :html "&#1056;&#1080;&#1089;. %d.:" :utf-8 "Рис. %d.:")
-     ("sl" :default "Slika %d")
-     ("sv" :default "Illustration %d")
+     ("sl" :default "Slika %d:")
+     ("sv" :default "Illustration %d:")
      ("tr" :default "Şekil %d:")
      ("zh-CN" :html "&#22270;%d&nbsp;" :utf-8 "图%d "))
     ("Footnotes"
@@ -6393,24 +6394,24 @@ them."
     ("Listing %d:"
      ("ar" :default "برنامج %d:")
      ("cs" :default "Program %d:")
-     ("da" :default "Program %d")
-     ("de" :default "Programmlisting %d")
-     ("es" :default "Listado de programa %d")
-     ("et" :default "Loend %d")
+     ("da" :default "Program %d:")
+     ("de" :default "Programmlisting %d:")
+     ("es" :default "Listado de programa %d:")
+     ("et" :default "Loend %d:")
      ("fa" :default "برنامه‌ریزی %d:")
-     ("fr" :default "Programme %d :" :html "Programme&nbsp;%d&nbsp;:")
-     ("it" :default "Listato %d :")
+     ("fr" :default "Programme %d:" :html "Programme&nbsp;%d&nbsp;:")
+     ("it" :default "Listato %d:")
      ("ja" :default "ソースコード%d:")
      ("nl" :default "Programma %d:" :html "Programma&nbsp;%d:")
      ("nn" :default "Program %d:")
-     ("no" :default "Dataprogram %d")
-     ("nb" :default "Dataprogram %d")
-     ("ro" :default "Lista %d")
+     ("no" :default "Dataprogram %d:")
+     ("nb" :default "Dataprogram %d:")
+     ("ro" :default "Lista %d:")
      ("pl" :default "Indeks %d:")
      ("pt_BR" :default "Listagem %d:")
      ("ru" :html "&#1056;&#1072;&#1089;&#1087;&#1077;&#1095;&#1072;&#1090;&#1082;&#1072; %d.:"
       :utf-8 "Распечатка %d.:")
-     ("sl" :default "Izpis programa %d")
+     ("sl" :default "Izpis programa %d:")
      ("sv" :default "Programlistning %d:")
      ("tr" :default "Program %d:")
      ("zh-CN" :html "&#20195;&#30721;%d&nbsp;" :utf-8 "代码%d "))
@@ -6434,6 +6435,7 @@ them."
     ("See figure %s"
      ("cs" :default "Viz obrázek %s")
      ("et" :default "Vaata joonist %s")
+     ("de" :default "Siehe Abbildung %s")
      ("fa" :default "نمایش شکل %s")
      ("fr" :default "cf. figure %s"
       :html "cf.&nbsp;figure&nbsp;%s" :latex "cf.~figure~%s")
@@ -6450,6 +6452,7 @@ them."
     ("See listing %s"
      ("cs" :default "Viz program %s")
      ("et" :default "Vaata loendit %s")
+     ("de" :default "Siehe Programmlisting %s")
      ("fa" :default "نمایش برنامه‌ریزی %s")
      ("fr" :default "cf. programme %s"
       :html "cf.&nbsp;programme&nbsp;%s" :latex "cf.~programme~%s")
@@ -6466,7 +6469,7 @@ them."
      ("ar" :default "انظر قسم %s")
      ("cs" :default "Viz sekce %s")
      ("da" :default "jævnfør afsnit %s")
-     ("de" :default "siehe Abschnitt %s")
+     ("de" :default "Siehe Abschnitt %s")
      ("es" :ascii "Vea seccion %s" :html "Vea secci&oacute;n %s" :default "Vea sección %s")
      ("et" :default "Vaata peatükki %s" :html "Vaata peat&#252;kki %s" :utf-8 "Vaata peatükki %s")
      ("fa" :default "نمایش بخش %s")
@@ -6489,6 +6492,7 @@ them."
     ("See table %s"
      ("cs" :default "Viz tabulka %s")
      ("et" :default "Vaata tabelit %s")
+     ("de" :default "Siehe Tabelle %s")
      ("fa" :default "نمایش جدول %s")
      ("fr" :default "cf. tableau %s"
       :html "cf.&nbsp;tableau&nbsp;%s" :latex "cf.~tableau~%s")
@@ -6526,27 +6530,27 @@ them."
     ("Table %d:"
      ("ar" :default "جدول %d:")
      ("cs" :default "Tabulka %d:")
-     ("da" :default "Tabel %d")
-     ("de" :default "Tabelle %d")
-     ("es" :default "Tabla %d")
-     ("et" :default "Tabel %d")
-     ("fa" :default "جدول %d")
-     ("fr" :default "Tableau %d :")
-     ("is" :default "Tafla %d")
+     ("da" :default "Tabel %d:")
+     ("de" :default "Tabelle %d:")
+     ("es" :default "Tabla %d:")
+     ("et" :default "Tabel %d:")
+     ("fa" :default "جدول %d:")
+     ("fr" :default "Tableau %d:")
+     ("is" :default "Tafla %d:")
      ("it" :default "Tabella %d:")
      ("ja" :default "表%d:" :html "&#34920;%d:")
      ("nl" :default "Tabel %d:" :html "Tabel&nbsp;%d:")
-     ("no" :default "Tabell %d")
-     ("nb" :default "Tabell %d")
-     ("nn" :default "Tabell %d")
-     ("pl" :default "Tabela %d")
+     ("no" :default "Tabell %d:")
+     ("nb" :default "Tabell %d:")
+     ("nn" :default "Tabell %d:")
+     ("pl" :default "Tabela %d:")
      ("pt_BR" :default "Tabela %d:")
-     ("ro" :default "Tabel %d")
+     ("ro" :default "Tabel %d:")
      ("ru" :html "&#1058;&#1072;&#1073;&#1083;&#1080;&#1094;&#1072; %d.:"
       :utf-8 "Таблица %d.:")
-     ("sl" :default "Tabela %d")
+     ("sl" :default "Tabela %d:")
      ("sv" :default "Tabell %d:")
-     ("tr" :default "Tablo %d")
+     ("tr" :default "Tablo %d:")
      ("zh-CN" :html "&#34920;%d&nbsp;" :utf-8 "表%d "))
     ("Table of Contents"
      ("ar" :default "قائمة المحتويات")
@@ -6660,7 +6664,7 @@ to `:default' encoding.  If it fails, return S."
   "Call function FUN on the results returned by BODY evaluation.
 
 FUN is an anonymous function of one argument.  BODY should be a valid
-ELisp source expression.  BODY evaluation happens in an asynchronous process,
+Elisp source expression.  BODY evaluation happens in an asynchronous process,
 from a buffer which is an exact copy of the current one.
 
 Use `org-export-add-to-stack' in FUN in order to register results

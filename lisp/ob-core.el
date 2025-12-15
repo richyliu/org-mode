@@ -1,6 +1,6 @@
 ;;; ob-core.el --- Working with Code Blocks          -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2025 Free Software Foundation, Inc.
 
 ;; Authors: Eric Schulte
 ;;	Dan Davison
@@ -358,18 +358,27 @@ a window into the `org-babel-get-src-block-info' function."
 	(full (lambda (it) (> (length it) 0)))
 	(printf (lambda (fmt &rest args) (princ (apply #'format fmt args)))))
     (when info
-      (with-help-window (help-buffer)
-	(let ((name        (nth 4 info))
-	      (lang        (nth 0 info))
-	      (switches    (nth 3 info))
-	      (header-args (nth 2 info)))
+      (let* ((name        (nth 4 info))
+	     (language    (nth 0 info))
+	     (switches    (nth 3 info))
+	     (header-args (nth 2 info))
+	     (property-header-args
+              (org-entry-get (point) "header-args" t))
+             (property-header-args-language
+              (org-entry-get (point) (concat "header-args:" language) t)))
+	(with-help-window (help-buffer)
 	  (when name            (funcall printf "Name: %s\n"     name))
-	  (when lang            (funcall printf "Lang: %s\n"     lang))
+	  (when language        (funcall printf "Language: %s\n"     language))
+          ;; Show header arguments that have been set through
+          ;; properties (i.e. in property drawers or through
+          ;; #+PROPERTY)
 	  (funcall printf "Properties:\n")
-	  (funcall printf "\t:header-args \t%s\n" (org-entry-get (point) "header-args" t))
-	  (funcall printf "\t:header-args:%s \t%s\n" lang (org-entry-get (point) (concat "header-args:" lang) t))
-
+	  (funcall printf "\t:header-args \t%s\n" property-header-args)
+	  (funcall printf "\t:header-args:%s \t%s\n" language property-header-args-language)
+          ;; Show switches
 	  (when (funcall full switches) (funcall printf "Switches: %s\n" switches))
+          ;; Show default header arguments and header arguments that
+          ;; have been explicitly set in the current code block.
 	  (funcall printf "Header Arguments:\n")
 	  (dolist (pair (sort header-args
 			      (lambda (a b) (string< (symbol-name (car a))
@@ -722,9 +731,17 @@ Otherwise, return a list with the following pattern:
 	       lang
 	       (org-babel--normalize-body datum)
 	       (apply #'org-babel-merge-params
-		      (if inline org-babel-default-inline-header-args
-			org-babel-default-header-args)
-		      (and (boundp lang-headers) (eval lang-headers t))
+                      ;; Use `copy-tree' to avoid creating shared structure
+                      ;; with the `org-babel-default-header-args-*' variables:
+                      ;; modifications by `org-babel-generate-file-param'
+                      ;; below would modify the shared structure, thereby
+                      ;; modifying the variables.
+                      (copy-tree
+                       (if inline org-babel-default-inline-header-args
+                         org-babel-default-header-args)
+                       t)
+                      (and (boundp lang-headers)
+                           (copy-tree (eval lang-headers t) t))
 		      (append
 		       ;; If DATUM is provided, make sure we get node
 		       ;; properties applicable to its location within
@@ -870,7 +887,7 @@ guess will be made."
 		 (default-directory
 		  (cond
 		   ((not dir) default-directory)
-                   ((when-let ((session (org-babel-session-buffer info)))
+                   ((when-let* ((session (org-babel-session-buffer info)))
                       (buffer-local-value 'default-directory (get-buffer session))))
 		   ((member mkdirp '("no" "nil" nil))
 		    (file-name-as-directory (expand-file-name dir)))
@@ -1379,8 +1396,8 @@ buffer."
 	 (while (re-search-forward "call_\\S-\\|^[ \t]*#\\+CALL:" nil t)
 	   (let ((,datum (org-element-context)))
 	     (when (org-element-type-p ,datum '(babel-call inline-babel-call))
-	       (goto-char (or (org-element-post-affiliated datum)
-                              (org-element-begin datum)))
+	       (goto-char (or (org-element-post-affiliated ,datum)
+                              (org-element-begin ,datum)))
 	       (let ((,end (copy-marker (org-element-end ,datum))))
 		 ,@body
 		 (goto-char ,end)
@@ -2835,7 +2852,9 @@ If called with prefix argument ARG, remove all result blocks in the
 buffer."
   (interactive "P")
   (if arg
-      (org-babel-map-src-blocks nil (org-babel-remove-result))
+      (progn
+        (org-babel-map-src-blocks nil (org-babel-remove-result))
+        (org-babel-map-call-lines nil (org-babel-remove-result)))
     (org-babel-remove-result)))
 
 (defun org-babel-result-end ()

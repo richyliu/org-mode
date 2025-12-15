@@ -1,6 +1,6 @@
 ;;; org-agenda.el --- Dynamic task and appointment lists for Org  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2004-2024 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2025 Free Software Foundation, Inc.
 
 ;; Author: Carsten Dominik <carsten.dominik@gmail.com>
 ;; Keywords: outlines, hypermedia, calendar, text
@@ -1637,16 +1637,16 @@ symbols are recognized:
 
 time-up            Put entries with time-of-day indications first, early first.
 time-down          Put entries with time-of-day indications first, late first.
-timestamp-up       Sort by any timestamp, early first.
-timestamp-down     Sort by any timestamp, late first.
-scheduled-up       Sort by scheduled timestamp, early first.
-scheduled-down     Sort by scheduled timestamp, late first.
-deadline-up        Sort by deadline timestamp, early first.
-deadline-down      Sort by deadline timestamp, late first.
-ts-up              Sort by active timestamp, early first.
-ts-down            Sort by active timestamp, late first.
-tsia-up            Sort by inactive timestamp, early first.
-tsia-down          Sort by inactive timestamp, late first.
+timestamp-up       Sort by any timestamp date, early first.
+timestamp-down     Sort by any timestamp date, late first.
+scheduled-up       Sort by scheduled timestamp date, early first.
+scheduled-down     Sort by scheduled timestamp date, late first.
+deadline-up        Sort by deadline timestamp date, early first.
+deadline-down      Sort by deadline timestamp date, late first.
+ts-up              Sort by active timestamp date, early first.
+ts-down            Sort by active timestamp date, late first.
+tsia-up            Sort by inactive timestamp date, early first.
+tsia-down          Sort by inactive timestamp date, late first.
 category-keep      Keep the default order of categories, corresponding to the
 		   sequence in `org-agenda-files'.
 category-up        Sort alphabetically by category, A-Z.
@@ -2835,7 +2835,7 @@ type."
   :version "24.4"
   :package-version '(Org . "8.0")
   :group 'org-agenda-custom-commands
-  :type '(choice (symbol :tag "No limit" nil)
+  :type '(choice (const :tag "No limit" nil)
 		 (integer :tag "Max number of entries")
 		 (repeat
 		  (cons (choice :tag "Agenda type"
@@ -2853,7 +2853,7 @@ type."
   :version "24.4"
   :package-version '(Org . "8.0")
   :group 'org-agenda-custom-commands
-  :type '(choice (symbol :tag "No limit" nil)
+  :type '(choice (const :tag "No limit" nil)
 		 (integer :tag "Max number of TODOs")
 		 (repeat
 		  (cons (choice :tag "Agenda type"
@@ -2871,7 +2871,7 @@ type."
   :version "24.4"
   :package-version '(Org . "8.0")
   :group 'org-agenda-custom-commands
-  :type '(choice (symbol :tag "No limit" nil)
+  :type '(choice (const :tag "No limit" nil)
 		 (integer :tag "Max number of tagged entries")
 		 (repeat
 		  (cons (choice :tag "Agenda type"
@@ -2889,7 +2889,7 @@ to limit entries to in this type."
   :version "24.4"
   :package-version '(Org . "8.0")
   :group 'org-agenda-custom-commands
-  :type '(choice (symbol :tag "No limit" nil)
+  :type '(choice (const :tag "No limit" nil)
 		 (integer :tag "Max number of minutes")
 		 (repeat
 		  (cons (choice :tag "Agenda type"
@@ -8220,7 +8220,7 @@ which see."
       (`lambda (assoc string table)) ;exact match?
       (`(boundaries . ,suffix)
        (let ((end (if (string-match "[-+<>=]" suffix)
-                      (match-string 0 suffix)
+                      (match-beginning 0)
                     (length suffix))))
          `(boundaries ,(or begin 0) . ,end)))
       (`nil
