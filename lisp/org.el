@@ -10295,6 +10295,7 @@ This function is run automatically after each state change to a DONE state."
       ;; Timestamps without a repeater are usually skipped.  However,
       ;; a SCHEDULED timestamp without one is removed, as they are no
       ;; longer relevant.
+      (setq org-repeater-old-scheduled-timestamp nil)
       (save-excursion
 	(let ((scheduled (org-entry-get (point) "SCHEDULED")))
 	  (setq org-repeater-old-scheduled-timestamp scheduled)
@@ -10909,13 +10910,14 @@ items are State notes."
 		   (cons "%D" (format-time-string
 			       (org-time-stamp-format nil nil)
 			       org-log-note-effective-time))
-		   (cons "%C" (let ((sched org-repeater-old-scheduled-timestamp)
+		   (cons "%C" (let ((sched (and (boundp 'org-repeater-old-scheduled-timestamp) org-repeater-old-scheduled-timestamp))
 				    (repeater-regexp "[ \t]+[.+]?\\+[0-9]+[hdwmy]\\([ \t]+-[0-9]+[hdwmy]\\)?"))
 				(if (and (stringp sched) (string-match repeater-regexp sched))
-				    ;; bit of a hack to remove the repeater part
-				    (replace-regexp-in-string repeater-regexp "" sched)
+                                    (progn
+                                      (setq org-repeater-old-scheduled-timestamp nil)
+                                      ;; bit of a hack to remove the repeater part
+                                      (replace-regexp-in-string repeater-regexp "" sched))
 				  "")))
-
 		   (cons "%s" (cond
 			       ((not org-log-note-state) "")
 			       ((string-match-p org-ts-regexp
