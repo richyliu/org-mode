@@ -2222,6 +2222,7 @@ used:
   %T  an active time stamp instead the default inactive one
   %d  a short-format time stamp.
   %D  an active short-format time stamp.
+  %C  an active time stamp for the old scheduled time in repeating tasks
   %s  the new TODO state or time stamp (inactive), in double quotes.
   %S  the old TODO state or time stamp (inactive), in double quotes.
   %u  the user name.
@@ -10296,6 +10297,7 @@ This function is run automatically after each state change to a DONE state."
       ;; longer relevant.
       (save-excursion
 	(let ((scheduled (org-entry-get (point) "SCHEDULED")))
+	  (setq org-repeater-old-scheduled-timestamp scheduled)
 	  (when (and scheduled (not (string-match-p org-repeat-re scheduled)))
 	    (org-remove-timestamp-with-keyword org-scheduled-string))))
       ;; Update every timestamp with a repeater in the entry.
@@ -10831,6 +10833,7 @@ items are State notes."
 		      (regexp-quote (cdr (assq 'state org-log-note-headings)))
 		      `(("%d" . ,org-ts-regexp-inactive)
 			("%D" . ,org-ts-regexp)
+			("%C" . ,org-ts-regexp)
 			("%s" . "\\(?:\"\\S-+\"\\)?")
 			("%S" . "\\(?:\"\\S-+\"\\)?")
 			("%t" . ,org-ts-regexp-inactive)
@@ -10906,6 +10909,13 @@ items are State notes."
 		   (cons "%D" (format-time-string
 			       (org-time-stamp-format nil nil)
 			       org-log-note-effective-time))
+		   (cons "%C" (let ((sched org-repeater-old-scheduled-timestamp)
+				    (repeater-regexp "[ \t]+[.+]?\\+[0-9]+[hdwmy]\\([ \t]+-[0-9]+[hdwmy]\\)?"))
+				(if (and (stringp sched) (string-match repeater-regexp sched))
+				    ;; bit of a hack to remove the repeater part
+				    (replace-regexp-in-string repeater-regexp "" sched)
+				  "")))
+
 		   (cons "%s" (cond
 			       ((not org-log-note-state) "")
 			       ((string-match-p org-ts-regexp
