@@ -918,6 +918,17 @@ several times."
 	  (const :tag "Never" nil)
 	  (const :tag "Always" t)))
 
+(defcustom org-agenda-skip-timestamp-if-scheduled-repeater nil
+  "Non-nil means skip timestamp line if same entry has a scheduled repeater.
+This is to prevent a duplicate entry showing in the agenda
+when the repeater on the scheduled timestamp has already advanced."
+  :group 'org-agenda-skip
+  :group 'org-agenda-daily/weekly
+  :version "24.1"
+  :type '(choice
+	  (const :tag "Never" nil)
+	  (const :tag "Always" t)))
+
 (defcustom org-agenda-skip-deadline-if-done nil
   "Non-nil means don't show deadlines when the corresponding item is done.
 When nil, the deadline is still shown and should give you a happy feeling.
@@ -5911,6 +5922,13 @@ displayed in agenda view."
 	    (when (and org-agenda-skip-timestamp-if-deadline-is-shown
 		       (assq (point) deadline-position-alist))
 	      (throw :skip nil))
+            (when org-agenda-skip-timestamp-if-scheduled-repeater
+              (let* ((ts (car (org-element-parse-secondary-string
+                               (org-entry-get (point) "SCHEDULED")
+                               '(timestamp))))
+                     (repeater (org-element-property :repeater-type ts)))
+                (when repeater
+                  (throw :skip nil))))
 	    (let* ((category (org-get-category pos))
                    (effort (org-entry-get pos org-effort-property))
                    (effort-minutes (when effort (save-match-data (org-duration-to-minutes effort))))
