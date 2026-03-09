@@ -1,6 +1,6 @@
 ;;; ob-emacs-lisp.el --- Babel Functions for Emacs-lisp Code -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2025 Free Software Foundation, Inc.
+;; Copyright (C) 2009-2026 Free Software Foundation, Inc.
 
 ;; Author: Eric Schulte
 ;; Keywords: literate programming, reproducible research
@@ -31,11 +31,6 @@
 (org-assert-version)
 
 (require 'ob-core)
-
-(declare-function org-babel--get-vars "ob" (params))
-(declare-function org-babel-result-cond "ob" (result-params scalar-form &rest table-forms))
-(declare-function org-babel-reassemble-table "ob" (table colnames rownames))
-(declare-function org-babel-pick-name "ob" (names selector))
 
 (defconst org-babel-header-args:emacs-lisp '((lexical . :any))
   "Emacs-lisp specific header arguments.")
