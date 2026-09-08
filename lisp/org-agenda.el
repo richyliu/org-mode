@@ -7614,10 +7614,42 @@ When TYPE is \"scheduled\", \"deadline\", \"timestamp\" or
 \"timestamp_ia\", compare within each of these type.  When TYPE
 is the empty string, compare all timestamps without respect of
 their type."
-  (cl-flet ((get-timestamp (entry)
-              (or (and (string-match type (or (get-text-property 1 'type entry) ""))
-                       (get-text-property 1 'ts-date entry))
-                  (if org-agenda-sort-notime-is-late most-positive-fixnum -1))))
+  (cl-flet
+      ((get-timestamp
+        (entry)
+        (or
+         ;; Fast path: metadata already attached to agenda line.
+         (and (string-match
+               type
+               (or (get-text-property 1 'type entry) ""))
+              (get-text-property 1 'ts-date entry))
+
+         ;; Fallback: read it from the actual Org heading.
+         (when-let* ((marker
+                      (or (get-text-property 1 'org-marker entry)
+                          (get-text-property 1 'org-hd-marker entry)))
+                     (timestamp
+                      (org-with-point-at marker
+                        (cond
+                         ((string= type "scheduled")
+                          (org-entry-get nil "SCHEDULED"))
+                         ((string= type "deadline")
+                          (org-entry-get nil "DEADLINE"))
+                         ((string= type "timestamp")
+                          (org-entry-get nil "TIMESTAMP"))
+                         ((string= type "timestamp_ia")
+                          (org-entry-get nil "TIMESTAMP_IA"))
+                         ((string= type "")
+                          (or (org-entry-get nil "SCHEDULED")
+                              (org-entry-get nil "DEADLINE")
+                              (org-entry-get nil "TIMESTAMP")
+                              (org-entry-get nil "TIMESTAMP_IA")))))))
+           (org-time-string-to-absolute timestamp))
+
+         ;; Missing timestamp.
+         (if org-agenda-sort-notime-is-late
+             most-positive-fixnum
+           -1))))
     (let ((ta (get-timestamp a))
           (tb (get-timestamp b)))
       (cond ((< ta tb) -1)
