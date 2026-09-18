@@ -11131,7 +11131,7 @@ items are State notes."
 			       (org-time-stamp-format nil nil)
 			       org-log-note-effective-time))
 		   (cons "%c" (let ((sched (and (boundp 'org-repeater-old-scheduled-timestamp) org-repeater-old-scheduled-timestamp))
-				    (repeater-regexp "[ \t]+[.+]?\\+[0-9]+[hdwmy]\\([ \t]+-[0-9]+[hdwmy]\\)?"))
+                                    (repeater-regexp "[ \t]+[.+]?\\+[0-9]+[hdwmy]\\(?:/[0-9]+[hdwmy]\\)?\\(?:[ \t]+--?[0-9]+[hdwmy]\\)?"))
 				(if (and (stringp sched) (string-match repeater-regexp sched))
                                     (progn
                                       (setq org-repeater-old-scheduled-timestamp nil)
